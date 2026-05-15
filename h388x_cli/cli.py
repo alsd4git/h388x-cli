@@ -12,7 +12,7 @@ from rich.table import Table
 
 from .api import ZTEH388XAPI
 from .discovery import Spider
-from .models import Client, DeviceInfo, DSLStats, WanConnection
+from .models import Client, DeviceInfo, DSLStats, WanConnection, WifiAP, WifiRadio
 
 load_dotenv()
 
@@ -364,6 +364,83 @@ def clients(
                 c.ipv6 or "-",
             )
         console.print(table)
+    finally:
+        api.logout()
+
+
+# ---------------------------------------------------------------------- wifi
+
+def _onoff(value: Optional[int]) -> str:
+    if value is None:
+        return "N/A"
+    return "[green]ON[/green]" if int(value) else "[red]OFF[/red]"
+
+
+def _security_label(ap: WifiAP) -> str:
+    """Render a compact security mode for a WLAN AP."""
+    bt = (ap.beacon_type or "").strip()
+    if bt == "None":
+        return "Open"
+    # ZTE encodes WPA2 fields under 11i*; WPA1 under WPA*.
+    parts: List[str] = []
+    if ap.wpa2_auth_mode:
+        parts.append(f"WPA2-{ap.wpa2_auth_mode.replace('Authentication', '')}/{ap.wpa2_encrypt or '?'}")
+    elif ap.wpa_auth_mode:
+        parts.append(f"WPA-{ap.wpa_auth_mode.replace('Authentication', '')}/{ap.wpa_encrypt or '?'}")
+    return " ".join(parts) or bt or "N/A"
+
+
+@app.command()
+def wifi(
+    ip: str = _ip_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+):
+    """Show Wi-Fi radios (2.4/5 GHz) and configured SSIDs (main + guest)."""
+    api = get_api(ip, user, password)
+    try:
+        radios_raw = api.get_wifi_radios()
+        aps_raw = api.get_wifi_aps()
+        radios = [WifiRadio.model_validate(r) for r in radios_raw]
+        aps = [WifiAP.model_validate(r) for r in aps_raw]
+
+        if state.json:
+            _emit_json({
+                "radios": [r.model_dump() for r in radios],
+                "aps": [a.model_dump() for a in aps],
+            })
+            return
+
+        if not radios and not aps:
+            console.print("[red]No Wi-Fi data returned.[/red]")
+            raise typer.Exit(code=1)
+
+        radios_table = Table(title="Wi-Fi radios")
+        radios_table.add_column("ID", style="dim")
+        radios_table.add_column("Band", style="cyan")
+        radios_table.add_column("Status")
+        for r in radios:
+            radios_table.add_row(r.id or "-", r.band or "-", _onoff(r.radio_on))
+        console.print(radios_table)
+
+        ap_table = Table(title=f"SSIDs ({len(aps)})")
+        ap_table.add_column("ID", style="dim")
+        ap_table.add_column("Radio", style="dim")
+        ap_table.add_column("Alias", style="cyan")
+        ap_table.add_column("ESSID", style="green")
+        ap_table.add_column("Status")
+        ap_table.add_column("Security", style="yellow")
+
+        for ap in aps:
+            ap_table.add_row(
+                ap.id or "-",
+                ap.radio_id or "-",
+                ap.alias or "-",
+                ap.essid or "-",
+                _onoff(ap.enabled),
+                _security_label(ap),
+            )
+        console.print(ap_table)
     finally:
         api.logout()
 

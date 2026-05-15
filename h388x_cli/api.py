@@ -31,6 +31,11 @@ class ZTEH388XAPI:
     LAN_CLIENTS_URL = "/?_type=menuData&_tag=accessdev_landevs_lua.lua"
     WIFI_CLIENTS_URL = "/?_type=menuData&_tag=accessdev_ssiddev_lua.lua"
 
+    # --- Wi-Fi (group A: read-only) -------------------------------------
+    WLAN_BASIC_VIEW_URL = "/?_type=menuView&_tag=wlanBasic&Menu3Location=0"
+    WLAN_RADIOS_URL = "/?_type=menuData&_tag=wlan_basiconoff_lua.lua"
+    WLAN_APS_URL = "/?_type=menuData&_tag=wlan_status_lua.lua"
+
     NO_CACHE = {"Cache-Control": "no-cache"}
 
     def __init__(self, ip: str = "192.168.1.1", username: str = "admin", password: str = ""):
@@ -192,6 +197,22 @@ class ZTEH388XAPI:
     def get_wifi_clients(self, retry: bool = True) -> List[Dict[str, str]]:
         return self._menudata(
             self.LOCALNET_VIEW_URL, self.WIFI_CLIENTS_URL, "OBJ_ACCESSDEV_ID", retry
+        )
+
+    # ---------------------------------------------------------------- Wi-Fi
+
+    def get_wifi_radios(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return the two WLAN radios (2.4 GHz / 5 GHz) and their on/off state."""
+        return self._menudata(
+            self.WLAN_BASIC_VIEW_URL, self.WLAN_RADIOS_URL,
+            "OBJ_WLANSETTING_ID", retry,
+        )
+
+    def get_wifi_aps(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return all WLAN access points (SSIDs) with ESSID, auth and encryption."""
+        return self._menudata(
+            self.LOCALNET_VIEW_URL, self.WLAN_APS_URL,
+            "OBJ_WLANAP_ID", retry,
         )
 
     # ------------------------------------------------------------------ reboot

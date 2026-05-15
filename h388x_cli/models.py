@@ -82,3 +82,39 @@ class Client(BaseModel):
     interface: Optional[str] = Field(None, alias="AliasName")
 
     model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class WifiRadio(BaseModel):
+    """A single WLAN radio (2.4 GHz / 5 GHz) from OBJ_WLANSETTING_ID/Instance.
+
+    On AGZHM 1.4.4 the modem reports just ``RadioStatus`` (1 = on, 0 = off)
+    and ``Band`` (e.g. ``2.4GHz`` / ``5GHz``).
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    band: Optional[str] = Field(None, alias="Band")
+    radio_on: Optional[int] = Field(None, alias="RadioStatus")
+
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class WifiAP(BaseModel):
+    """A single WLAN AP/SSID from OBJ_WLANAP_ID/Instance (``wlan_status``).
+
+    Each radio exposes 4 APs (Main + 3 guest), so an H388X reports 8 entries
+    total. ``radio_id`` (``WLANViewName``) is e.g. ``DEV.WIFI.RD1`` and links
+    the AP back to a ``WifiRadio.id``.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    enabled: Optional[int] = Field(None, alias="Enable")
+    radio_id: Optional[str] = Field(None, alias="WLANViewName")
+    alias: Optional[str] = Field(None, alias="Alias")
+    essid: Optional[str] = Field(None, alias="ESSID")
+    beacon_type: Optional[str] = Field(None, alias="BeaconType")
+    wpa_auth_mode: Optional[str] = Field(None, alias="WPAAuthMode")
+    wpa_encrypt: Optional[str] = Field(None, alias="WPAEncryptType")
+    wpa2_auth_mode: Optional[str] = Field(None, alias="11iAuthMode")
+    wpa2_encrypt: Optional[str] = Field(None, alias="11iEncryptType")
+
+    model_config = {"populate_by_name": True, "extra": "ignore"}
