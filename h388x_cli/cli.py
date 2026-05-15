@@ -11,6 +11,7 @@ from rich.live import Live
 from rich.table import Table
 
 from .api import ZTEH388XAPI
+from .discovery import Spider
 from .models import Client, DeviceInfo, DSLStats, WanConnection
 
 load_dotenv()
@@ -392,6 +393,123 @@ def reboot(
             console.print("[red]Failed to send reboot command.[/red]")
         if not ok:
             raise typer.Exit(code=1)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------- discover
+
+@app.command()
+def discover(
+    ip: str = _ip_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    output: str = typer.Option(
+        "endpoints.json",
+        "--output",
+        "-o",
+        help="Where to write the discovery report (JSON).",
+    ),
+    max_requests: int = typer.Option(
+        400, "--max-requests", help="Stop after this many HTTP requests."
+    ),
+    delay: float = typer.Option(
+        0.15, "--delay", help="Seconds to sleep between HTTP requests."
+    ),
+    sample_chars: int = typer.Option(
+        600,
+        "--sample-chars",
+        help="Per-endpoint response sample size (chars) saved in the report.",
+    ),
+):
+    """
+    Spider the modem web UI and dump every reachable
+    `_type=...&_tag=...` endpoint to a JSON file.
+
+    Read-only: only HTTP GET, mutating-looking tags are listed but not fetched.
+    Useful to extend the CLI with new commands without guessing endpoints.
+    """
+    api = get_api(ip, user, password)
+
+    progress_msg = {"text": "starting..."}
+
+    def cb(msg: str, done: int, total: int) -> None:
+        progress_msg["text"] = f"{done}/{total}  {msg}"
+
+    try:
+        if state.json:
+            spider = Spider(
+                api,
+                max_requests=max_requests,
+                delay=delay,
+                sample_chars=sample_chars,
+            )
+            result = spider.run()
+        else:
+            with console.status(
+                "[bold green]Spidering modem web UI...",
+                spinner="dots",
+            ) as status:
+                def cb_console(msg: str, done: int, total: int) -> None:
+                    status.update(
+                        f"[bold green]Spidering modem web UI[/bold green]  "
+                        f"[dim]({done}/{total})[/dim]  {msg}"
+                    )
+                spider = Spider(
+                    api,
+                    max_requests=max_requests,
+                    delay=delay,
+                    sample_chars=sample_chars,
+                    progress_cb=cb_console,
+                )
+                result = spider.run()
+
+        # Tag the report with the device identity for context.
+        try:
+            dev = api.get_device_info() or {}
+        except Exception:
+            dev = {}
+        result["device"] = {
+            "ip": ip,
+            "model": dev.get("ModelName"),
+            "serial": dev.get("SerialNumber"),
+            "software": dev.get("SoftwareVer"),
+            "hardware": dev.get("HardwareVer"),
+            "boot": dev.get("BootVer"),
+            "firmware_date": dev.get("VerDate"),
+        }
+
+        # Write the file.
+        with open(output, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2, default=str)
+            f.write("\n")
+
+        if state.json:
+            _emit_json({"output": output, "stats": result["stats"]})
+            return
+
+        s = result["stats"]
+        console.print(f"[green]Wrote[/green] [bold]{output}[/bold]")
+        table = Table(title="Discovery summary")
+        table.add_column("Metric", style="cyan")
+        table.add_column("Value", style="magenta")
+        table.add_row("HTTP requests", str(s["requests_made"]))
+        table.add_row("HTTP errors", str(s["errors"]))
+        table.add_row("Assets crawled", str(s["asset_count"]))
+        table.add_row("Endpoints found", str(s["endpoint_count"]))
+        table.add_row("Endpoints fetched", str(s["endpoint_fetched"]))
+        table.add_row("With usable data", str(s["endpoints_with_data"]))
+        for k, v in s["by_type"].items():
+            table.add_row(f"  type={k}", str(v))
+        for k, v in s["by_shape"].items():
+            table.add_row(f"  shape={k}", str(v))
+        for k, v in s["skipped"].items():
+            table.add_row(f"  skipped: {k}", str(v))
+        console.print(table)
+        console.print(
+            "[dim]Tip: send the JSON file back so we can map new commands "
+            "to the discovered endpoints.[/dim]"
+        )
     finally:
         api.logout()
 
