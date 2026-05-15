@@ -98,6 +98,45 @@ class WifiRadio(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class FirewallLevel(BaseModel):
+    """Active firewall preset (OBJ_FWLEVEL_ID)."""
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    level: Optional[str] = Field(None, alias="Level")  # Low | Middle | High
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class FirewallDos(BaseModel):
+    """DoS protection state (OBJ_FWDOS_ID)."""
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    enabled: Optional[int] = Field(None, alias="Enable")
+    threshold: Optional[int] = Field(None, alias="Threshold")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class UrlFilterGlobal(BaseModel):
+    """URL-filter master switch + global target action (OBJ_FWBASE_ID).
+
+    ``target`` is a ZTE-encoded action; on AGZHM 1.4.4 ``0`` = block listed
+    URLs, ``1`` = allow only listed URLs.
+    """
+
+    id: Optional[str] = Field(None, alias="_OBJ_InstID")
+    enabled: Optional[int] = Field(None, alias="UrlFilterEnable")
+    target: Optional[int] = Field(None, alias="UrlFilterTarget")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class Dmz(BaseModel):
+    """DMZ state (OBJ_FWDMZ_ID)."""
+
+    id: Optional[str] = Field(None, alias="_OBJ_InstID")
+    enabled: Optional[int] = Field(None, alias="Enable")
+    internal_client: Optional[str] = Field(None, alias="InternalClient")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
 class WifiAP(BaseModel):
     """A single WLAN AP/SSID from OBJ_WLANAP_ID/Instance (``wlan_status``).
 

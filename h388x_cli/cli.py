@@ -12,7 +12,18 @@ from rich.table import Table
 
 from .api import ZTEH388XAPI
 from .discovery import Spider
-from .models import Client, DeviceInfo, DSLStats, WanConnection, WifiAP, WifiRadio
+from .models import (
+    Client,
+    DeviceInfo,
+    Dmz,
+    DSLStats,
+    FirewallDos,
+    FirewallLevel,
+    UrlFilterGlobal,
+    WanConnection,
+    WifiAP,
+    WifiRadio,
+)
 
 load_dotenv()
 
@@ -441,6 +452,64 @@ def wifi(
                 _security_label(ap),
             )
         console.print(ap_table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------- firewall
+
+_URL_FILTER_TARGET_LABEL = {
+    0: "block-listed",
+    1: "allow-listed",
+}
+
+
+@app.command()
+def firewall(
+    ip: str = _ip_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+):
+    """Show firewall summary: level, anti-DoS, URL filter, DMZ."""
+    api = get_api(ip, user, password)
+    try:
+        level = FirewallLevel.model_validate(api.get_firewall_level() or {})
+        dos = FirewallDos.model_validate(api.get_firewall_dos() or {})
+        urlf = UrlFilterGlobal.model_validate(api.get_url_filter_global() or {})
+        dmz = Dmz.model_validate(api.get_dmz() or {})
+
+        if state.json:
+            _emit_json({
+                "level": level.model_dump(),
+                "dos": dos.model_dump(),
+                "url_filter": urlf.model_dump(),
+                "dmz": dmz.model_dump(),
+            })
+            return
+
+        table = Table(title="Firewall")
+        table.add_column("Setting", style="cyan")
+        table.add_column("Value", style="magenta")
+
+        table.add_row("Level", level.level or "N/A")
+
+        dos_state = _onoff(dos.enabled)
+        if dos.threshold is not None:
+            dos_state = f"{dos_state}  [dim](threshold {dos.threshold} pkt/s)[/dim]"
+        table.add_row("Anti-DoS", dos_state)
+
+        url_state = _onoff(urlf.enabled)
+        if urlf.target is not None:
+            label = _URL_FILTER_TARGET_LABEL.get(int(urlf.target), str(urlf.target))
+            url_state = f"{url_state}  [dim](mode: {label})[/dim]"
+        table.add_row("URL filter", url_state)
+
+        dmz_state = _onoff(dmz.enabled)
+        if dmz.internal_client:
+            dmz_state = f"{dmz_state}  → [green]{dmz.internal_client}[/green]"
+        table.add_row("DMZ", dmz_state)
+
+        console.print(table)
     finally:
         api.logout()
 

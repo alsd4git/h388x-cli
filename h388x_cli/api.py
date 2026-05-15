@@ -36,6 +36,15 @@ class ZTEH388XAPI:
     WLAN_RADIOS_URL = "/?_type=menuData&_tag=wlan_basiconoff_lua.lua"
     WLAN_APS_URL = "/?_type=menuData&_tag=wlan_status_lua.lua"
 
+    # --- Firewall (group A: read-only) ----------------------------------
+    FIREWALL_VIEW_URL = "/?_type=menuView&_tag=firewall&Menu3Location=0"
+    FIREWALL_LEVEL_URL = "/?_type=menuData&_tag=firewall_config_lua.lua"
+    FIREWALL_DOS_URL = "/?_type=menuData&_tag=firewall_dos_lua.lua"
+    FILTER_CRITERIA_VIEW_URL = "/?_type=menuView&_tag=filterCriteria&Menu3Location=0"
+    FIREWALL_FILTER_GLOBAL_URL = "/?_type=menuData&_tag=firewall_filterglobal_m.lua"
+    DMZ_VIEW_URL = "/?_type=menuView&_tag=dmzMenu&Menu3Location=0"
+    FIREWALL_DMZ_URL = "/?_type=menuData&_tag=firewall_dmz_m.lua"
+
     NO_CACHE = {"Cache-Control": "no-cache"}
 
     def __init__(self, ip: str = "192.168.1.1", username: str = "admin", password: str = ""):
@@ -214,6 +223,40 @@ class ZTEH388XAPI:
             self.LOCALNET_VIEW_URL, self.WLAN_APS_URL,
             "OBJ_WLANAP_ID", retry,
         )
+
+    # ------------------------------------------------------------- Firewall
+
+    def get_firewall_level(self, retry: bool = True) -> Dict[str, str]:
+        """Return the active firewall level (Low/Middle/High) from OBJ_FWLEVEL_ID."""
+        rows = self._menudata(
+            self.FIREWALL_VIEW_URL, self.FIREWALL_LEVEL_URL,
+            "OBJ_FWLEVEL_ID", retry,
+        )
+        return rows[0] if rows else {}
+
+    def get_firewall_dos(self, retry: bool = True) -> Dict[str, str]:
+        """Return DoS protection state (Enable + Threshold) from OBJ_FWDOS_ID."""
+        rows = self._menudata(
+            self.FIREWALL_VIEW_URL, self.FIREWALL_DOS_URL,
+            "OBJ_FWDOS_ID", retry,
+        )
+        return rows[0] if rows else {}
+
+    def get_url_filter_global(self, retry: bool = True) -> Dict[str, str]:
+        """Return URL-filter master switch + target action from OBJ_FWBASE_ID."""
+        rows = self._menudata(
+            self.FILTER_CRITERIA_VIEW_URL, self.FIREWALL_FILTER_GLOBAL_URL,
+            "OBJ_FWBASE_ID", retry,
+        )
+        return rows[0] if rows else {}
+
+    def get_dmz(self, retry: bool = True) -> Dict[str, str]:
+        """Return DMZ state (Enable + InternalClient) from OBJ_FWDMZ_ID."""
+        rows = self._menudata(
+            self.DMZ_VIEW_URL, self.FIREWALL_DMZ_URL,
+            "OBJ_FWDMZ_ID", retry,
+        )
+        return rows[0] if rows else {}
 
     # ------------------------------------------------------------------ reboot
 
