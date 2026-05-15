@@ -18,3 +18,6 @@ dependencies = [
 
 [project.scripts]
 h388x = "h388x_cli.cli:app"
+
+[tool.setuptools]
+packages = ["h388x_cli"]
