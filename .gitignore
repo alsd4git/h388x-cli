@@ -64,3 +64,6 @@ Thumbs.db
 
 # Local firmware analysis workspace
 firmware/
+
+# Discovery output (contains modem serial, fields, sample HTML/XML)
+endpoints.json
