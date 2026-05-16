@@ -44,6 +44,8 @@ class ZTEH388XAPI:
     FIREWALL_FILTER_GLOBAL_URL = "/?_type=menuData&_tag=firewall_filterglobal_m.lua"
     DMZ_VIEW_URL = "/?_type=menuView&_tag=dmzMenu&Menu3Location=0"
     FIREWALL_DMZ_URL = "/?_type=menuData&_tag=firewall_dmz_m.lua"
+    PORT_FORWARDING_VIEW_URL = "/?_type=menuView&_tag=portForwardingMenu&Menu3Location=0"
+    PORT_FORWARDING_URL = "/?_type=menuData&_tag=firewall_portforwarding_m.lua"
 
     NO_CACHE = {"Cache-Control": "no-cache"}
 
@@ -257,6 +259,13 @@ class ZTEH388XAPI:
             "OBJ_FWDMZ_ID", retry,
         )
         return rows[0] if rows else {}
+
+    def get_port_forwarding_rules(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return all port-forwarding rules (OBJ_FWPM_ID) configured in NAT."""
+        return self._menudata(
+            self.PORT_FORWARDING_VIEW_URL, self.PORT_FORWARDING_URL,
+            "OBJ_FWPM_ID", retry,
+        )
 
     # ------------------------------------------------------------------ reboot
 

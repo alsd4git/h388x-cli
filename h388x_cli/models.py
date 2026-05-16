@@ -137,6 +137,29 @@ class Dmz(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class PortForwardingRule(BaseModel):
+    """A single port-forwarding rule (OBJ_FWPM_ID).
+
+    Notes from the H388X firmware:
+    - ``Protocol`` is one of ``TCP``, ``UDP``, ``BOTH``.
+    - ``RemoteHost`` / ``RemoteHostEndRange`` ``0.0.0.0`` means "any source".
+    - ``ExternalPort`` and ``ExternalPortEndRange`` define the WAN port range
+      (``EndRange`` equals ``Port`` for single-port rules).
+    """
+
+    id: Optional[str] = Field(None, alias="_OBJ_InstID")
+    enabled: Optional[int] = Field(None, alias="Enable")
+    description: Optional[str] = Field(None, alias="Description")
+    protocol: Optional[str] = Field(None, alias="Protocol")
+    external_port: Optional[int] = Field(None, alias="ExternalPort")
+    external_port_end: Optional[int] = Field(None, alias="ExternalPortEndRange")
+    internal_client: Optional[str] = Field(None, alias="InternalClient")
+    internal_port: Optional[int] = Field(None, alias="InternalPort")
+    remote_host: Optional[str] = Field(None, alias="RemoteHost")
+    remote_host_end: Optional[str] = Field(None, alias="RemoteHostEndRange")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
 class WifiAP(BaseModel):
     """A single WLAN AP/SSID from OBJ_WLANAP_ID/Instance (``wlan_status``).
 

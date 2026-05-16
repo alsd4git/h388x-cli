@@ -19,6 +19,7 @@ from .models import (
     DSLStats,
     FirewallDos,
     FirewallLevel,
+    PortForwardingRule,
     UrlFilterGlobal,
     WanConnection,
     WifiAP,
@@ -510,6 +511,78 @@ def firewall(
         table.add_row("DMZ", dmz_state)
 
         console.print(table)
+    finally:
+        api.logout()
+
+
+# --------------------------------------------------------------- port-forward
+
+def _port_range(start: Optional[int], end: Optional[int]) -> str:
+    if start is None:
+        return "-"
+    if end is None or end == start:
+        return str(start)
+    return f"{start}-{end}"
+
+
+def _remote_range(start: Optional[str], end: Optional[str]) -> str:
+    if not start or start == "0.0.0.0":
+        return "any"
+    if not end or end == start or end == "0.0.0.0":
+        return start
+    return f"{start}-{end}"
+
+
+@app.command("port-forward")
+def port_forward(
+    ip: str = _ip_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    all_: bool = typer.Option(
+        False,
+        "--all",
+        "-a",
+        help="Show all rules (default: only Enabled ones).",
+    ),
+):
+    """List configured port-forwarding rules (NAT)."""
+    api = get_api(ip, user, password)
+    try:
+        rows = api.get_port_forwarding_rules()
+        rules = [PortForwardingRule.model_validate(r) for r in rows]
+        if not all_:
+            rules = [r for r in rules if r.enabled]
+
+        if state.json:
+            _emit_json([r.model_dump() for r in rules])
+            return
+
+        table = Table(title=f"Port forwarding ({len(rules)})")
+        table.add_column("#", style="dim")
+        table.add_column("Status")
+        table.add_column("Description", style="cyan")
+        table.add_column("Proto", style="yellow")
+        table.add_column("WAN port", style="magenta")
+        table.add_column("LAN client", style="green")
+        table.add_column("LAN port", style="magenta")
+        table.add_column("From", style="dim")
+
+        for r in rules:
+            table.add_row(
+                (r.id or "").rsplit("PtMapping", 1)[-1] or "-",
+                _onoff(r.enabled),
+                r.description or "-",
+                r.protocol or "-",
+                _port_range(r.external_port, r.external_port_end),
+                r.internal_client or "-",
+                str(r.internal_port) if r.internal_port is not None else "-",
+                _remote_range(r.remote_host, r.remote_host_end),
+            )
+        console.print(table)
+        if not all_:
+            console.print(
+                "[dim]Tip: pass --all to also show disabled rules.[/dim]"
+            )
     finally:
         api.logout()
 
