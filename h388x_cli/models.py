@@ -137,6 +137,35 @@ class Dmz(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class DnsLocal(BaseModel):
+    """Modem-side DNS server config (OBJ_DNS_ID).
+
+    ``SerIPAddress1`` / ``SerIPAddress2`` set to ``0.0.0.0`` mean the modem
+    is using DNS servers from the WAN connection (no manual override).
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    server1: Optional[str] = Field(None, alias="SerIPAddress1")
+    server2: Optional[str] = Field(None, alias="SerIPAddress2")
+    domain_name: Optional[str] = Field(None, alias="DomainName")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class DnsHostname(BaseModel):
+    """A DNS-bound host known to the modem (ALLDNSHOST/Instance).
+
+    On AGZHM 1.4.4 the modem exposes the union of DHCP-learned + manually
+    bound hostnames here. ``LeaseTime`` is in seconds (``0`` for static).
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    hostname: Optional[str] = Field(None, alias="HostName")
+    ip_address: Optional[str] = Field(None, alias="IPAddress")
+    mac: Optional[str] = Field(None, alias="MacAddr")
+    lease_time: Optional[int] = Field(None, alias="LeaseTime")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
 class PortForwardingRule(BaseModel):
     """A single port-forwarding rule (OBJ_FWPM_ID).
 

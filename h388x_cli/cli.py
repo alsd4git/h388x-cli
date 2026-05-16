@@ -16,6 +16,8 @@ from .models import (
     Client,
     DeviceInfo,
     Dmz,
+    DnsHostname,
+    DnsLocal,
     DSLStats,
     FirewallDos,
     FirewallLevel,
@@ -583,6 +585,62 @@ def port_forward(
             console.print(
                 "[dim]Tip: pass --all to also show disabled rules.[/dim]"
             )
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------------ dns
+
+@app.command()
+def dns(
+    ip: str = _ip_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+):
+    """Show modem DNS config + bound hostnames (DHCP + manual)."""
+    api = get_api(ip, user, password)
+    try:
+        local = DnsLocal.model_validate(api.get_dns_local() or {})
+        hosts = [DnsHostname.model_validate(r) for r in api.get_dns_hostnames()]
+
+        if state.json:
+            _emit_json({
+                "local": local.model_dump(),
+                "hostnames": [h.model_dump() for h in hosts],
+            })
+            return
+
+        local_table = Table(title="Local DNS")
+        local_table.add_column("Field", style="cyan")
+        local_table.add_column("Value", style="magenta")
+
+        def _srv(addr: Optional[str]) -> str:
+            if not addr or addr == "0.0.0.0":
+                return "[dim](from WAN)[/dim]"
+            return addr
+
+        local_table.add_row("Domain", local.domain_name or "-")
+        local_table.add_row("Server 1", _srv(local.server1))
+        local_table.add_row("Server 2", _srv(local.server2))
+        console.print(local_table)
+
+        hosts_table = Table(title=f"DNS-bound hostnames ({len(hosts)})")
+        hosts_table.add_column("Hostname", style="cyan")
+        hosts_table.add_column("IP", style="green")
+        hosts_table.add_column("MAC")
+        hosts_table.add_column("Lease", style="yellow")
+        for h in sorted(hosts, key=lambda x: x.ip_address or ""):
+            lease = (
+                "static" if h.lease_time == 0
+                else (str(h.lease_time) + "s" if h.lease_time is not None else "-")
+            )
+            hosts_table.add_row(
+                h.hostname or "-",
+                h.ip_address or "-",
+                h.mac or "-",
+                lease,
+            )
+        console.print(hosts_table)
     finally:
         api.logout()
 

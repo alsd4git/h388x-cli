@@ -47,6 +47,11 @@ class ZTEH388XAPI:
     PORT_FORWARDING_VIEW_URL = "/?_type=menuView&_tag=portForwardingMenu&Menu3Location=0"
     PORT_FORWARDING_URL = "/?_type=menuData&_tag=firewall_portforwarding_m.lua"
 
+    # --- DNS (group A: read-only) ---------------------------------------
+    DNS_VIEW_URL = "/?_type=menuView&_tag=dns&Menu3Location=0"
+    DNS_LOCAL_URL = "/?_type=menuData&_tag=dns_localdns_lua.lua"
+    DNS_HOSTNAMES_URL = "/?_type=menuData&_tag=dns_hostname_lua.lua"
+
     NO_CACHE = {"Cache-Control": "no-cache"}
 
     def __init__(self, ip: str = "192.168.1.1", username: str = "admin", password: str = ""):
@@ -265,6 +270,23 @@ class ZTEH388XAPI:
         return self._menudata(
             self.PORT_FORWARDING_VIEW_URL, self.PORT_FORWARDING_URL,
             "OBJ_FWPM_ID", retry,
+        )
+
+    # ------------------------------------------------------------------- DNS
+
+    def get_dns_local(self, retry: bool = True) -> Dict[str, str]:
+        """Return the modem's own DNS server config (OBJ_DNS_ID)."""
+        rows = self._menudata(
+            self.DNS_VIEW_URL, self.DNS_LOCAL_URL,
+            "OBJ_DNS_ID", retry,
+        )
+        return rows[0] if rows else {}
+
+    def get_dns_hostnames(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return the DNS-bound hostnames known to the modem (ALLDNSHOST)."""
+        return self._menudata(
+            self.DNS_VIEW_URL, self.DNS_HOSTNAMES_URL,
+            "ALLDNSHOST", retry,
         )
 
     # ------------------------------------------------------------------ reboot
