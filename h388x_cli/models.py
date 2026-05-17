@@ -166,6 +166,35 @@ class DnsHostname(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class EthInterface(BaseModel):
+    """A single ethernet interface (OBJ_ETH_ID/Instance).
+
+    Used both for the 4 LAN ports (IGD.LD1.ETH1..ETH4, with ``AliasName``
+    = LAN1..LAN4) and for the eth-WAN port (IGD.WD3.ETH5, which has no
+    ``AliasName`` and exposes a few extra optical/SFP-style fields like
+    ``singleStatus`` / ``singleRXStrength`` that the modem uses when the
+    WAN connector is wired to an SFP cage on similar TIM gear).
+
+    ``LinkSpeed`` is in Mbps (``1000`` = gigabit, ``10`` = idle/no-link).
+    ``BytesReceived`` / ``BytesSent`` are 64-bit byte counters.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    alias: Optional[str] = Field(None, alias="AliasName")
+    status: Optional[str] = Field(None, alias="Status")
+    link_speed: Optional[int] = Field(None, alias="LinkSpeed")
+    link_duplex: Optional[str] = Field(None, alias="LinkDuplex")
+    mac: Optional[str] = Field(None, alias="MACAddress")
+    bytes_rx: Optional[int] = Field(None, alias="BytesReceived")
+    bytes_tx: Optional[int] = Field(None, alias="BytesSent")
+    packets_rx: Optional[int] = Field(None, alias="PacketsReceived")
+    packets_tx: Optional[int] = Field(None, alias="PacketsSent")
+    single_status: Optional[str] = Field(None, alias="singleStatus")
+    single_rx_strength: Optional[str] = Field(None, alias="singleRXStrength")
+    single_tx_strength: Optional[str] = Field(None, alias="singleTXStrength")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
 class Ddns(BaseModel):
     """DDNS client state (OBJ_DDNSCLIENT_ID/Instance, single client IGD.DDNSC1).
 

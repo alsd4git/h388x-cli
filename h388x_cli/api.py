@@ -64,6 +64,14 @@ class ZTEH388XAPI:
     DDNS_VIEW_URL = "/?_type=menuView&_tag=ddns&Menu3Location=0"
     DDNS_URL = "/?_type=menuData&_tag=ddns_lua.lua"
 
+    # --- Ethernet ports (group B: read-only) ----------------------------
+    # LAN port list lives behind the local-network status view.
+    ETH_LAN_URL = "/?_type=menuData&_tag=eth_lanstatus_lua.lua"
+    # The eth-WAN port (IGD.WD3.ETH5, optical/SFP-style WAN uplink) lives
+    # behind its own view.
+    ETH_WAN_VIEW_URL = "/?_type=menuView&_tag=ethWanStatus&Menu3Location=0"
+    ETH_WAN_URL = "/?_type=menuData&_tag=eth_interface_status_lua.lua"
+
     NO_CACHE = {"Cache-Control": "no-cache"}
 
     def __init__(self, ip: str = "192.168.1.1", username: str = "admin", password: str = ""):
@@ -326,6 +334,23 @@ class ZTEH388XAPI:
         rows = self._menudata(
             self.DDNS_VIEW_URL, self.DDNS_URL,
             "OBJ_DDNSCLIENT_ID", retry,
+        )
+        return rows[0] if rows else {}
+
+    # -------------------------------------------------------- Ethernet ports
+
+    def get_eth_lan_ports(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return the 4 LAN ethernet ports (OBJ_ETH_ID under localNetStatus)."""
+        return self._menudata(
+            self.LOCALNET_VIEW_URL, self.ETH_LAN_URL,
+            "OBJ_ETH_ID", retry,
+        )
+
+    def get_eth_wan_port(self, retry: bool = True) -> Dict[str, str]:
+        """Return the eth-WAN uplink port (OBJ_ETH_ID under ethWanStatus)."""
+        rows = self._menudata(
+            self.ETH_WAN_VIEW_URL, self.ETH_WAN_URL,
+            "OBJ_ETH_ID", retry,
         )
         return rows[0] if rows else {}
 

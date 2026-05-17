@@ -17,6 +17,7 @@ from .models import (
     Client,
     Ddns,
     DeviceInfo,
+    EthInterface,
     Dmz,
     DnsHostname,
     DnsLocal,
@@ -756,6 +757,110 @@ def ddns(
         table.add_row("Status", d.status or "-")
         table.add_row("Last error", d.last_error or "-")
         console.print(table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------------ eth
+
+def _human_bytes(n: Optional[int]) -> str:
+    if n is None:
+        return "-"
+    if n == 0:
+        return "0 B"
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    value = float(n)
+    idx = 0
+    while value >= 1024 and idx < len(units) - 1:
+        value /= 1024
+        idx += 1
+    return f"{value:.2f} {units[idx]}"
+
+
+def _link_speed(mbps: Optional[int], status: Optional[str]) -> str:
+    # Modem reports LinkSpeed=10 when the port has no link, even on gigabit
+    # PHYs, which is misleading. Treat any NoLink-ish status as no speed.
+    if not status or status.lower() in {"nolink", "down", "disabled"}:
+        return "-"
+    if mbps is None:
+        return "-"
+    if mbps >= 1000 and mbps % 1000 == 0:
+        return f"{mbps // 1000} Gbps"
+    return f"{mbps} Mbps"
+
+
+@app.command()
+def eth(
+    ip: str = _ip_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+):
+    """Show ethernet port status (4 LAN + the eth-WAN uplink)."""
+    api = get_api(ip, user, password)
+    try:
+        lan_rows = api.get_eth_lan_ports()
+        wan_row = api.get_eth_wan_port()
+        lan = [EthInterface.model_validate(r) for r in lan_rows]
+        wan = EthInterface.model_validate(wan_row or {}) if wan_row else None
+
+        if state.json:
+            _emit_json({
+                "lan": [p.model_dump() for p in lan],
+                "wan": wan.model_dump() if wan else None,
+            })
+            return
+
+        lan_table = Table(title=f"LAN ports ({len(lan)})")
+        lan_table.add_column("Port", style="cyan")
+        lan_table.add_column("Status")
+        lan_table.add_column("Speed", style="magenta")
+        lan_table.add_column("Duplex")
+        lan_table.add_column("RX", style="green", justify="right")
+        lan_table.add_column("TX", style="green", justify="right")
+        lan_table.add_column("MAC", style="dim")
+        for p in lan:
+            up = (p.status or "").lower() == "up"
+            status = (
+                f"[green]{p.status}[/green]" if up
+                else f"[dim]{p.status or '-'}[/dim]"
+            )
+            lan_table.add_row(
+                p.alias or (p.id or "-"),
+                status,
+                _link_speed(p.link_speed, p.status),
+                p.link_duplex if up else "-",
+                _human_bytes(p.bytes_rx),
+                _human_bytes(p.bytes_tx),
+                p.mac or "-",
+            )
+        console.print(lan_table)
+
+        if wan:
+            wan_table = Table(title="WAN (ethernet)")
+            wan_table.add_column("Field", style="cyan")
+            wan_table.add_column("Value", style="magenta")
+            wan_table.add_row("Port ID", wan.id or "-")
+            wan_table.add_row("Status", wan.status or "-")
+            wan_table.add_row("Speed", _link_speed(wan.link_speed, wan.status))
+            wan_table.add_row(
+                "Duplex",
+                wan.link_duplex if (wan.status or "").lower() == "up" else "-",
+            )
+            wan_table.add_row("MAC", wan.mac or "-")
+            wan_table.add_row("RX bytes", _human_bytes(wan.bytes_rx))
+            wan_table.add_row("TX bytes", _human_bytes(wan.bytes_tx))
+            if wan.packets_rx is not None or wan.packets_tx is not None:
+                wan_table.add_row(
+                    "Packets RX/TX",
+                    f"{wan.packets_rx or 0} / {wan.packets_tx or 0}",
+                )
+            if wan.single_status:
+                wan_table.add_row("Optical status", wan.single_status)
+                wan_table.add_row(
+                    "Optical RX/TX",
+                    f"{wan.single_rx_strength or '-'} / {wan.single_tx_strength or '-'}",
+                )
+            console.print(wan_table)
     finally:
         api.logout()
 
