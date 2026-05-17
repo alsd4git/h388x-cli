@@ -15,6 +15,7 @@ from .discovery import Spider
 from .models import (
     ArpEntry,
     Client,
+    Ddns,
     DeviceInfo,
     Dmz,
     DnsHostname,
@@ -722,6 +723,38 @@ def arp(
                 e.interface or "-",
                 str(e.status) if e.status is not None else "-",
             )
+        console.print(table)
+    finally:
+        api.logout()
+
+
+# ----------------------------------------------------------------------- ddns
+
+@app.command()
+def ddns(
+    ip: str = _ip_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+):
+    """Show DDNS client status (single IGD.DDNSC1)."""
+    api = get_api(ip, user, password)
+    try:
+        raw = api.get_ddns()
+        d = Ddns.model_validate(raw or {})
+
+        if state.json:
+            _emit_json(d.model_dump())
+            return
+
+        table = Table(title="DDNS")
+        table.add_column("Field", style="cyan")
+        table.add_column("Value", style="magenta")
+        table.add_row("State", _onoff(d.enabled))
+        table.add_row("Service", d.service or "-")
+        table.add_row("Username", d.username or "-")
+        table.add_row("Domain", d.domain or "-")
+        table.add_row("Status", d.status or "-")
+        table.add_row("Last error", d.last_error or "-")
         console.print(table)
     finally:
         api.logout()

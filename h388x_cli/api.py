@@ -60,6 +60,10 @@ class ZTEH388XAPI:
     ARP_VIEW_URL = "/?_type=menuView&_tag=arpTable&Menu3Location=0"
     ARP_URL = "/?_type=menuData&_tag=arp_arptable_lua.lua"
 
+    # --- DDNS (group B: read-only) --------------------------------------
+    DDNS_VIEW_URL = "/?_type=menuView&_tag=ddns&Menu3Location=0"
+    DDNS_URL = "/?_type=menuData&_tag=ddns_lua.lua"
+
     NO_CACHE = {"Cache-Control": "no-cache"}
 
     def __init__(self, ip: str = "192.168.1.1", username: str = "admin", password: str = ""):
@@ -314,6 +318,16 @@ class ZTEH388XAPI:
             self.ARP_VIEW_URL, self.ARP_URL,
             "OBJ_GETARPINST_ID", retry,
         )
+
+    # ------------------------------------------------------------------- DDNS
+
+    def get_ddns(self, retry: bool = True) -> Dict[str, str]:
+        """Return the DDNS client state (OBJ_DDNSCLIENT_ID, single instance)."""
+        rows = self._menudata(
+            self.DDNS_VIEW_URL, self.DDNS_URL,
+            "OBJ_DDNSCLIENT_ID", retry,
+        )
+        return rows[0] if rows else {}
 
     # ------------------------------------------------------------------ reboot
 

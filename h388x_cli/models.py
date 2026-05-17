@@ -166,6 +166,28 @@ class DnsHostname(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class Ddns(BaseModel):
+    """DDNS client state (OBJ_DDNSCLIENT_ID/Instance, single client IGD.DDNSC1).
+
+    ``Service`` is the provider tag chosen in the UI (e.g. ``dyndns``,
+    ``no-ip``, ``zte``); empty when DDNS is disabled and never configured.
+    ``Status`` is the modem's textual state (``Disconnected``, ``Connected``,
+    ``ConnectFailed``, ...). ``Hash`` and ``Password`` are intentionally
+    not exposed even though the endpoint emits an ``<encode>Password</encode>``
+    hint.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    enabled: Optional[int] = Field(None, alias="Enable")
+    service: Optional[str] = Field(None, alias="Service")
+    username: Optional[str] = Field(None, alias="Username")
+    domain: Optional[str] = Field(None, alias="DomainName")
+    status: Optional[str] = Field(None, alias="Status")
+    last_error: Optional[str] = Field(None, alias="LastError")
+    user_type: Optional[int] = Field(None, alias="UserType")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
 class ArpEntry(BaseModel):
     """A single ARP cache entry (OBJ_GETARPINST_ID/Instance).
 
