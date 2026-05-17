@@ -17,6 +17,8 @@ from .models import (
     Client,
     Ddns,
     DeviceInfo,
+    DhcpBinding,
+    DhcpConfig,
     EthInterface,
     Dmz,
     DnsHostname,
@@ -861,6 +863,89 @@ def eth(
                     f"{wan.single_rx_strength or '-'} / {wan.single_tx_strength or '-'}",
                 )
             console.print(wan_table)
+    finally:
+        api.logout()
+
+
+# ----------------------------------------------------------------------- dhcp
+
+def _format_lease(seconds: Optional[int]) -> str:
+    if seconds is None:
+        return "-"
+    if seconds == 0:
+        return "infinite"
+    days, rem = divmod(int(seconds), 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, secs = divmod(rem, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if secs and not parts:
+        parts.append(f"{secs}s")
+    return " ".join(parts) or "0s"
+
+
+_DNS_SOURCE_LABEL = {
+    0: "manual",
+    1: "from WAN",
+}
+
+
+@app.command()
+def dhcp(
+    ip: str = _ip_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+):
+    """Show DHCPv4 server config + static reservations (bindings)."""
+    api = get_api(ip, user, password)
+    try:
+        cfg = DhcpConfig.model_validate(api.get_dhcp_config() or {})
+        bindings = [DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings()]
+
+        if state.json:
+            _emit_json({
+                "config": cfg.model_dump(),
+                "bindings": [b.model_dump() for b in bindings],
+            })
+            return
+
+        cfg_table = Table(title="DHCPv4 server")
+        cfg_table.add_column("Field", style="cyan")
+        cfg_table.add_column("Value", style="magenta")
+        cfg_table.add_row("State", _onoff(cfg.enabled))
+        cfg_table.add_row("Router IP", cfg.router_ip or "-")
+        cfg_table.add_row("Subnet mask", cfg.subnet_mask or "-")
+        cfg_table.add_row(
+            "Pool",
+            f"{cfg.pool_min or '-'} ... {cfg.pool_max or '-'}",
+        )
+        cfg_table.add_row("Lease time", _format_lease(cfg.lease_time))
+        cfg_table.add_row(
+            "DNS source",
+            _DNS_SOURCE_LABEL.get(cfg.dns_source, str(cfg.dns_source)) if cfg.dns_source is not None else "-",
+        )
+        cfg_table.add_row("DNS 1 (pushed)", cfg.dns1 or "-")
+        cfg_table.add_row("DNS 2 (pushed)", cfg.dns2 or "-")
+        console.print(cfg_table)
+
+        bind_table = Table(title=f"Static bindings / reservations ({len(bindings)})")
+        bind_table.add_column("Name", style="cyan")
+        bind_table.add_column("IP", style="green")
+        bind_table.add_column("MAC")
+        bind_table.add_column("ID", style="dim")
+        for b in sorted(bindings, key=lambda x: x.ip_address or ""):
+            bind_table.add_row(
+                b.name or "-",
+                b.ip_address or "-",
+                b.mac or "-",
+                b.id or "-",
+            )
+        console.print(bind_table)
     finally:
         api.logout()
 

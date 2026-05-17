@@ -166,6 +166,43 @@ class DnsHostname(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class DhcpConfig(BaseModel):
+    """LAN DHCPv4 server configuration (OBJ_Br0AndDhcpsHosCfg_ID, single row).
+
+    ``IPAddr`` is the modem's own LAN IP (the gateway handed out to clients).
+    ``MinAddress`` / ``MaxAddress`` define the dynamic pool.
+    ``DNSServer1`` / ``DNSServer2`` are the DNS servers pushed to clients;
+    ``DnsServerSource`` is the source mode (manual vs. inherited from WAN).
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    enabled: Optional[int] = Field(None, alias="ServerEnable")
+    router_ip: Optional[str] = Field(None, alias="IPAddr")
+    subnet_mask: Optional[str] = Field(None, alias="SubnetMask")
+    pool_min: Optional[str] = Field(None, alias="MinAddress")
+    pool_max: Optional[str] = Field(None, alias="MaxAddress")
+    lease_time: Optional[int] = Field(None, alias="LeaseTime")
+    dns_source: Optional[int] = Field(None, alias="DnsServerSource")
+    dns1: Optional[str] = Field(None, alias="DNSServer1")
+    dns2: Optional[str] = Field(None, alias="DNSServer2")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class DhcpBinding(BaseModel):
+    """A single DHCPv4 reservation (OBJ_DHCPBIND_ID/Instance).
+
+    These are static "this MAC always gets this IP" bindings configured
+    in the LAN DHCP page, distinct from live leases (which `clients`
+    surfaces via OBJ_DHCPHOSTINFO_ID).
+    """
+
+    id: Optional[str] = Field(None, alias="_OBJ_InstID")
+    name: Optional[str] = Field(None, alias="Name")
+    ip_address: Optional[str] = Field(None, alias="IPAddr")
+    mac: Optional[str] = Field(None, alias="MACAddr")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
 class EthInterface(BaseModel):
     """A single ethernet interface (OBJ_ETH_ID/Instance).
 

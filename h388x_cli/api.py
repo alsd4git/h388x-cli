@@ -72,6 +72,10 @@ class ZTEH388XAPI:
     ETH_WAN_VIEW_URL = "/?_type=menuView&_tag=ethWanStatus&Menu3Location=0"
     ETH_WAN_URL = "/?_type=menuData&_tag=eth_interface_status_lua.lua"
 
+    # --- DHCPv4 server (group B: read-only) -----------------------------
+    DHCP_CONFIG_URL = "/?_type=menuData&_tag=dhcp4s_dhcpbasiccfg_lua.lua"
+    DHCP_BINDINGS_URL = "/?_type=menuData&_tag=dhcp4s_dhcpbinding_m.lua"
+
     NO_CACHE = {"Cache-Control": "no-cache"}
 
     def __init__(self, ip: str = "192.168.1.1", username: str = "admin", password: str = ""):
@@ -353,6 +357,23 @@ class ZTEH388XAPI:
             "OBJ_ETH_ID", retry,
         )
         return rows[0] if rows else {}
+
+    # --------------------------------------------------------- DHCPv4 server
+
+    def get_dhcp_config(self, retry: bool = True) -> Dict[str, str]:
+        """Return the LAN DHCPv4 server config (OBJ_Br0AndDhcpsHosCfg_ID)."""
+        rows = self._menudata(
+            self.DHCP_VIEW_URL, self.DHCP_CONFIG_URL,
+            "OBJ_Br0AndDhcpsHosCfg_ID", retry,
+        )
+        return rows[0] if rows else {}
+
+    def get_dhcp_bindings(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return DHCPv4 reservations / static bindings (OBJ_DHCPBIND_ID)."""
+        return self._menudata(
+            self.DHCP_VIEW_URL, self.DHCP_BINDINGS_URL,
+            "OBJ_DHCPBIND_ID", retry,
+        )
 
     # ------------------------------------------------------------------ reboot
 
