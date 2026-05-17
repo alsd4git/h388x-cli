@@ -56,6 +56,10 @@ class ZTEH388XAPI:
     MAC_TABLE_VIEW_URL = "/?_type=menuView&_tag=macTable&Menu3Location=0"
     MAC_TABLE_URL = "/?_type=menuData&_tag=macinfo_mactable_lua.lua"
 
+    # --- ARP table (group B: read-only) ---------------------------------
+    ARP_VIEW_URL = "/?_type=menuView&_tag=arpTable&Menu3Location=0"
+    ARP_URL = "/?_type=menuData&_tag=arp_arptable_lua.lua"
+
     NO_CACHE = {"Cache-Control": "no-cache"}
 
     def __init__(self, ip: str = "192.168.1.1", username: str = "admin", password: str = ""):
@@ -300,6 +304,15 @@ class ZTEH388XAPI:
         return self._menudata(
             self.MAC_TABLE_VIEW_URL, self.MAC_TABLE_URL,
             "OBJ_GETMACINST_ID", retry,
+        )
+
+    # ------------------------------------------------------------- ARP table
+
+    def get_arp_table(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return the modem's L3->L2 ARP cache (OBJ_GETARPINST_ID)."""
+        return self._menudata(
+            self.ARP_VIEW_URL, self.ARP_URL,
+            "OBJ_GETARPINST_ID", retry,
         )
 
     # ------------------------------------------------------------------ reboot

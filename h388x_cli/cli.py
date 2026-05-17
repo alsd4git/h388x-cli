@@ -13,6 +13,7 @@ from rich.table import Table
 from .api import ZTEH388XAPI
 from .discovery import Spider
 from .models import (
+    ArpEntry,
     Client,
     DeviceInfo,
     Dmz,
@@ -679,6 +680,47 @@ def mac_table(
                 str(e.vlan_id) if e.vlan_id is not None else "-",
                 e.interface or "-",
                 age,
+            )
+        console.print(table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------------ arp
+
+@app.command()
+def arp(
+    ip: str = _ip_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+):
+    """Show the modem's ARP cache (IPv4 -> MAC per interface)."""
+    api = get_api(ip, user, password)
+    try:
+        rows = api.get_arp_table()
+        entries = [ArpEntry.model_validate(r) for r in rows]
+
+        if state.json:
+            _emit_json([e.model_dump() for e in entries])
+            return
+
+        def _ip_key(addr: Optional[str]) -> tuple:
+            try:
+                return tuple(int(p) for p in (addr or "").split("."))
+            except ValueError:
+                return (0, 0, 0, 0)
+
+        table = Table(title=f"ARP cache ({len(entries)})")
+        table.add_column("IP", style="green")
+        table.add_column("MAC", style="cyan")
+        table.add_column("Interface", style="yellow")
+        table.add_column("Status", style="dim", justify="right")
+        for e in sorted(entries, key=lambda x: _ip_key(x.dest_ip)):
+            table.add_row(
+                e.dest_ip or "-",
+                e.mac or "-",
+                e.interface or "-",
+                str(e.status) if e.status is not None else "-",
             )
         console.print(table)
     finally:

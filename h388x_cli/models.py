@@ -166,6 +166,22 @@ class DnsHostname(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class ArpEntry(BaseModel):
+    """A single ARP cache entry (OBJ_GETARPINST_ID/Instance).
+
+    No ``_InstID`` is reported by AGZHM 1.4.4. ``Status`` is the raw
+    numeric value returned by the modem (semantics not documented; on the
+    web UI it is rendered with a localized string, so it is left as int
+    to avoid an unverified mapping).
+    """
+
+    dest_ip: Optional[str] = Field(None, alias="DestIP")
+    mac: Optional[str] = Field(None, alias="MACAddr")
+    interface: Optional[str] = Field(None, alias="Interface")
+    status: Optional[int] = Field(None, alias="Status")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
 class MacTableEntry(BaseModel):
     """A single L2 forwarding-table entry (OBJ_GETMACINST_ID/Instance).
 
