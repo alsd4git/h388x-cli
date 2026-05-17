@@ -76,6 +76,12 @@ class ZTEH388XAPI:
     DHCP_CONFIG_URL = "/?_type=menuData&_tag=dhcp4s_dhcpbasiccfg_lua.lua"
     DHCP_BINDINGS_URL = "/?_type=menuData&_tag=dhcp4s_dhcpbinding_m.lua"
 
+    # --- DHCPv6 + RA (group B: read-only) -------------------------------
+    DHCP6_VIEW_URL = "/?_type=menuView&_tag=lanMgrIpv6&Menu3Location=0"
+    DHCP6_SERVER_URL = "/?_type=menuData&_tag=dhcp6s_dhcpserver_lua.lua"
+    DHCP6_HOSTS_URL = "/?_type=menuData&_tag=dhcp6s_hostinfo_lua.lua"
+    RA_URL = "/?_type=menuData&_tag=ra_raservice_lua.lua"
+
     NO_CACHE = {"Cache-Control": "no-cache"}
 
     def __init__(self, ip: str = "192.168.1.1", username: str = "admin", password: str = ""):
@@ -374,6 +380,31 @@ class ZTEH388XAPI:
             self.DHCP_VIEW_URL, self.DHCP_BINDINGS_URL,
             "OBJ_DHCPBIND_ID", retry,
         )
+
+    # ----------------------------------------------------------- DHCPv6 + RA
+
+    def get_dhcp6_server(self, retry: bool = True) -> Dict[str, str]:
+        """Return the LAN DHCPv6 server config (OBJ_DHCP6S_ID, single)."""
+        rows = self._menudata(
+            self.DHCP6_VIEW_URL, self.DHCP6_SERVER_URL,
+            "OBJ_DHCP6S_ID", retry,
+        )
+        return rows[0] if rows else {}
+
+    def get_dhcp6_hosts(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return DHCPv6 client bindings (OBJ_DHCP6C_ID); empty when IPv6 is off."""
+        return self._menudata(
+            self.DHCP6_VIEW_URL, self.DHCP6_HOSTS_URL,
+            "OBJ_DHCP6C_ID", retry,
+        )
+
+    def get_ra(self, retry: bool = True) -> Dict[str, str]:
+        """Return the IPv6 Router Advertisement service config (OBJ_RAIS_ID)."""
+        rows = self._menudata(
+            self.DHCP6_VIEW_URL, self.RA_URL,
+            "OBJ_RAIS_ID", retry,
+        )
+        return rows[0] if rows else {}
 
     # ------------------------------------------------------------------ reboot
 

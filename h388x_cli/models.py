@@ -166,6 +166,55 @@ class DnsHostname(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class Dhcp6Server(BaseModel):
+    """LAN DHCPv6 server configuration (OBJ_DHCP6S_ID, single instance).
+
+    On AGZHM 1.4.4:
+    - ``IANAEnable`` enables IA_NA (stateful address assignment).
+    - ``IsPrefixAutoMode`` = 1 means the modem uses the prefix delegated
+      by the WAN; when 0, ``IANAManualPrefixes`` lists the local prefix.
+    - ``ManualDNSEnable`` toggles between auto-DNS and the manual
+      ``DNSAddr1/2/3`` values pushed via DHCPv6.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    enabled: Optional[int] = Field(None, alias="Enable")
+    iana_enabled: Optional[int] = Field(None, alias="IANAEnable")
+    prefix_auto: Optional[int] = Field(None, alias="IsPrefixAutoMode")
+    manual_prefixes: Optional[str] = Field(None, alias="IANAManualPrefixes")
+    manual_dns: Optional[int] = Field(None, alias="ManualDNSEnable")
+    dns1: Optional[str] = Field(None, alias="DNSAddr1")
+    dns2: Optional[str] = Field(None, alias="DNSAddr2")
+    dns3: Optional[str] = Field(None, alias="DNSAddr3")
+    dns_refresh_time: Optional[int] = Field(None, alias="DnsRefreshTime")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class RouterAdvertisement(BaseModel):
+    """IPv6 Router Advertisement service (OBJ_RAIS_ID, single instance).
+
+    Standard RFC 4861 flags from the RA daemon:
+    - ``AdvManagedFlag`` (M flag): clients use DHCPv6 for addresses.
+    - ``AdvOtherConfigFlag`` (O flag): clients use DHCPv6 for other config.
+    - ``IsPrefixAutoMode`` = 1 means advertise the WAN-delegated prefix;
+      otherwise ``ManualPrefixes`` is advertised.
+    - ``MinRtrAdvInterval`` / ``MaxRtrAdvInterval`` in seconds.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    enabled: Optional[int] = Field(None, alias="Enable")
+    managed_flag: Optional[int] = Field(None, alias="AdvManagedFlag")
+    other_config_flag: Optional[int] = Field(None, alias="AdvOtherConfigFlag")
+    prefix_auto: Optional[int] = Field(None, alias="IsPrefixAutoMode")
+    manual_prefixes: Optional[str] = Field(None, alias="ManualPrefixes")
+    min_interval: Optional[int] = Field(None, alias="MinRtrAdvInterval")
+    max_interval: Optional[int] = Field(None, alias="MaxRtrAdvInterval")
+    adv_mtu_enabled: Optional[int] = Field(None, alias="AdvLinkMTUEnable")
+    adv_mtu: Optional[int] = Field(None, alias="AdvLinkMTU")
+    preferred_router_flag: Optional[int] = Field(None, alias="AdvPreferredRouterFlag")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
 class DhcpConfig(BaseModel):
     """LAN DHCPv4 server configuration (OBJ_Br0AndDhcpsHosCfg_ID, single row).
 

@@ -17,9 +17,11 @@ from .models import (
     Client,
     Ddns,
     DeviceInfo,
+    Dhcp6Server,
     DhcpBinding,
     DhcpConfig,
     EthInterface,
+    RouterAdvertisement,
     Dmz,
     DnsHostname,
     DnsLocal,
@@ -946,6 +948,77 @@ def dhcp(
                 b.id or "-",
             )
         console.print(bind_table)
+    finally:
+        api.logout()
+
+
+# ---------------------------------------------------------------------- dhcp6
+
+@app.command()
+def dhcp6(
+    ip: str = _ip_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+):
+    """Show IPv6 DHCPv6 server + Router Advertisement state."""
+    api = get_api(ip, user, password)
+    try:
+        srv = Dhcp6Server.model_validate(api.get_dhcp6_server() or {})
+        ra = RouterAdvertisement.model_validate(api.get_ra() or {})
+        hosts = api.get_dhcp6_hosts()
+
+        if state.json:
+            _emit_json({
+                "dhcp6_server": srv.model_dump(),
+                "ra": ra.model_dump(),
+                "hosts": hosts,
+            })
+            return
+
+        srv_table = Table(title="DHCPv6 server")
+        srv_table.add_column("Field", style="cyan")
+        srv_table.add_column("Value", style="magenta")
+        srv_table.add_row("State", _onoff(srv.enabled))
+        srv_table.add_row("IA_NA (stateful)", _onoff(srv.iana_enabled))
+        srv_table.add_row(
+            "Prefix source",
+            "auto (from WAN)" if srv.prefix_auto else "manual",
+        )
+        if not srv.prefix_auto:
+            srv_table.add_row("Manual prefixes", srv.manual_prefixes or "-")
+        srv_table.add_row("DNS source", "manual" if srv.manual_dns else "auto")
+        if srv.manual_dns:
+            srv_table.add_row("DNS 1", srv.dns1 or "-")
+            srv_table.add_row("DNS 2", srv.dns2 or "-")
+            srv_table.add_row("DNS 3", srv.dns3 or "-")
+        srv_table.add_row("DNS refresh", _format_lease(srv.dns_refresh_time))
+        console.print(srv_table)
+
+        ra_table = Table(title="Router Advertisement (RA)")
+        ra_table.add_column("Field", style="cyan")
+        ra_table.add_column("Value", style="magenta")
+        ra_table.add_row("State", _onoff(ra.enabled))
+        ra_table.add_row("M flag (managed)", _onoff(ra.managed_flag))
+        ra_table.add_row("O flag (other-config)", _onoff(ra.other_config_flag))
+        ra_table.add_row(
+            "Prefix source",
+            "auto (from WAN)" if ra.prefix_auto else "manual",
+        )
+        if not ra.prefix_auto:
+            ra_table.add_row("Manual prefixes", ra.manual_prefixes or "-")
+        ra_table.add_row(
+            "RA interval",
+            f"{ra.min_interval}..{ra.max_interval}s"
+            if ra.min_interval is not None and ra.max_interval is not None else "-",
+        )
+        if ra.adv_mtu_enabled:
+            ra_table.add_row("Advertised MTU", str(ra.adv_mtu) if ra.adv_mtu else "-")
+        ra_table.add_row("Preferred router", _onoff(ra.preferred_router_flag))
+        console.print(ra_table)
+
+        console.print(
+            f"[dim]DHCPv6 client bindings (OBJ_DHCP6C_ID): {len(hosts)}[/dim]"
+        )
     finally:
         api.logout()
 
