@@ -21,6 +21,7 @@ from .models import (
     DSLStats,
     FirewallDos,
     FirewallLevel,
+    MacTableEntry,
     PortForwardingRule,
     UrlFilterGlobal,
     WanConnection,
@@ -641,6 +642,45 @@ def dns(
                 lease,
             )
         console.print(hosts_table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------ mac-table
+
+@app.command("mac-table")
+def mac_table(
+    ip: str = _ip_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+):
+    """Show the modem bridge's L2 forwarding table (MACs per interface)."""
+    api = get_api(ip, user, password)
+    try:
+        rows = api.get_mac_table()
+        entries = [MacTableEntry.model_validate(r) for r in rows]
+
+        if state.json:
+            _emit_json([e.model_dump() for e in entries])
+            return
+
+        table = Table(title=f"MAC table ({len(entries)})")
+        table.add_column("MAC", style="cyan")
+        table.add_column("VLAN", style="yellow")
+        table.add_column("Interface", style="green")
+        table.add_column("Age", style="magenta", justify="right")
+
+        for e in sorted(entries, key=lambda x: (x.interface or "", x.mac or "")):
+            age = (
+                f"{e.aging_time:.1f}s" if e.aging_time is not None else "-"
+            )
+            table.add_row(
+                e.mac or "-",
+                str(e.vlan_id) if e.vlan_id is not None else "-",
+                e.interface or "-",
+                age,
+            )
+        console.print(table)
     finally:
         api.logout()
 

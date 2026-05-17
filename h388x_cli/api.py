@@ -52,6 +52,10 @@ class ZTEH388XAPI:
     DNS_LOCAL_URL = "/?_type=menuData&_tag=dns_localdns_lua.lua"
     DNS_HOSTNAMES_URL = "/?_type=menuData&_tag=dns_hostname_lua.lua"
 
+    # --- MAC table (group A: read-only) ---------------------------------
+    MAC_TABLE_VIEW_URL = "/?_type=menuView&_tag=macTable&Menu3Location=0"
+    MAC_TABLE_URL = "/?_type=menuData&_tag=macinfo_mactable_lua.lua"
+
     NO_CACHE = {"Cache-Control": "no-cache"}
 
     def __init__(self, ip: str = "192.168.1.1", username: str = "admin", password: str = ""):
@@ -287,6 +291,15 @@ class ZTEH388XAPI:
         return self._menudata(
             self.DNS_VIEW_URL, self.DNS_HOSTNAMES_URL,
             "ALLDNSHOST", retry,
+        )
+
+    # ------------------------------------------------------------- MAC table
+
+    def get_mac_table(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return the L2 forwarding table (OBJ_GETMACINST_ID) seen by the bridge."""
+        return self._menudata(
+            self.MAC_TABLE_VIEW_URL, self.MAC_TABLE_URL,
+            "OBJ_GETMACINST_ID", retry,
         )
 
     # ------------------------------------------------------------------ reboot

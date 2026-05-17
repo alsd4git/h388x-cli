@@ -166,6 +166,24 @@ class DnsHostname(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class MacTableEntry(BaseModel):
+    """A single L2 forwarding-table entry (OBJ_GETMACINST_ID/Instance).
+
+    Each row is what the modem's bridge currently sees on a physical
+    LAN/WLAN port. ``LanName`` is the bridge interface (e.g. ``LAN1``,
+    ``SSID1``); ``AgingTm`` is the time in seconds since the MAC was
+    last refreshed in the FDB.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    mac: Optional[str] = Field(None, alias="MACAddr")
+    vlan_id: Optional[int] = Field(None, alias="VlanID")
+    interface: Optional[str] = Field(None, alias="LanName")
+    # AGZHM 1.4.4 reports AgingTm as a float-string in seconds (e.g. "271.77").
+    aging_time: Optional[float] = Field(None, alias="AgingTm")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
 class PortForwardingRule(BaseModel):
     """A single port-forwarding rule (OBJ_FWPM_ID).
 
