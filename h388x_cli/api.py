@@ -84,11 +84,30 @@ class ZTEH388XAPI:
 
     NO_CACHE = {"Cache-Control": "no-cache"}
 
-    def __init__(self, ip: str = "192.168.1.1", username: str = "admin", password: str = ""):
-        self.base_url = f"http://{ip}"
+    def __init__(
+        self,
+        host: str = "192.168.1.1",
+        username: str = "admin",
+        password: str = "",
+        verify_tls: bool = True,
+    ):
+        """
+        ``host`` can be a bare IP/hostname (``192.168.1.1``,
+        ``modem.example.com``) or a full URL with explicit scheme
+        (``http://192.168.1.1``, ``https://modem.example.com:8443``).
+        When the scheme is omitted, ``http://`` is assumed; any trailing
+        slash is stripped so ``base_url`` is safe to concatenate with
+        absolute paths.
+        """
+        host = (host or "").strip()
+        if "://" in host:
+            self.base_url = host.rstrip("/")
+        else:
+            self.base_url = f"http://{host}".rstrip("/")
         self.username = username
         self.password = password
         self.session = requests.Session()
+        self.session.verify = verify_tls
         self.session.headers.update({
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -97,6 +116,14 @@ class ZTEH388XAPI:
             ),
             "Accept": "*/*",
             "X-Requested-With": "XMLHttpRequest",
+            # The modem's CSRF check refuses menuData requests whose Origin
+            # / Referer doesn't match its own host. On direct LAN access this
+            # is set automatically by the browser; over HTTPS reverse proxies
+            # (or anywhere the requests session isn't a real browser) we
+            # have to set them explicitly or every menuData returns
+            # SessionTimeout even with a valid SID cookie.
+            "Origin": self.base_url,
+            "Referer": f"{self.base_url}/",
         })
         self.session_token: Optional[str] = None
 
