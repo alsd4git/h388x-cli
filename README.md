@@ -40,14 +40,24 @@ Create a `.env` file (see [`.env.example`](./.env.example)) at the project root:
 
 ```env
 H388X_PASSWORD=your_admin_password_here
-H388X_IP=192.168.1.1     # optional, default 192.168.1.1
+H388X_HOST=192.168.1.1   # IP, hostname, or full URL — default 192.168.1.1
 H388X_USER=admin         # optional, default admin
 ```
+
+`H388X_HOST` accepts:
+
+- a bare IP (`192.168.1.1`)
+- a hostname (`modem.example.com`, defaults to `http://`)
+- a full URL with scheme (`https://modem.example.com:8443`)
+
+`H388X_IP` is still read as a fallback for older configs.
 
 You can also override any value on the command line:
 
 ```bash
-h388x stats --ip 192.168.1.254 --user custom_admin --password your_password
+h388x stats --host 192.168.1.254 --user custom_admin --password your_password
+h388x stats --host https://modem.example.com:8443
+h388x stats --host https://modem.example.com -k  # --insecure: skip TLS verify
 ```
 
 ## Usage

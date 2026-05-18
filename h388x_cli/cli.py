@@ -99,8 +99,20 @@ def _emit_json(payload: Any) -> None:
 
 # ------------------------------------------------------------------ options
 
-def _ip_opt() -> str:
-    return typer.Option(os.getenv("H388X_IP", "192.168.1.1"), help="Modem IP address")
+def _host_opt() -> str:
+    # Backward compat: keep accepting H388X_IP if H388X_HOST is unset.
+    default = os.getenv("H388X_HOST") or os.getenv("H388X_IP", "192.168.1.1")
+    return typer.Option(
+        default,
+        "--host",
+        "-H",
+        help=(
+            "Modem host: IP, hostname, or full URL. Examples: "
+            "`192.168.1.1`, `modem.example.com`, "
+            "`https://modem.example.com:8443`. "
+            "Plain hostnames default to http://."
+        ),
+    )
 
 
 def _user_opt() -> str:
@@ -111,7 +123,21 @@ def _pwd_opt() -> Optional[str]:
     return typer.Option(None, help="Admin password (or set H388X_PASSWORD)")
 
 
-def get_api(ip: str, user: str, password: Optional[str]) -> ZTEH388XAPI:
+def _insecure_opt() -> bool:
+    return typer.Option(
+        False,
+        "--insecure",
+        "-k",
+        help="Skip TLS certificate verification (useful for self-signed HTTPS).",
+    )
+
+
+def get_api(
+    host: str,
+    user: str,
+    password: Optional[str],
+    insecure: bool = False,
+) -> ZTEH388XAPI:
     password = password or os.getenv("H388X_PASSWORD", "")
     if not password:
         console.print(
@@ -120,7 +146,17 @@ def get_api(ip: str, user: str, password: Optional[str]) -> ZTEH388XAPI:
         )
         raise typer.Exit(code=1)
 
-    api = ZTEH388XAPI(ip=ip, username=user, password=password)
+    if insecure:
+        # urllib3 yells loudly when verify=False; silence it once, not per call.
+        try:
+            import urllib3
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        except Exception:
+            pass
+
+    api = ZTEH388XAPI(
+        host=host, username=user, password=password, verify_tls=not insecure
+    )
     if state.json:
         ok = api.login()
     else:
@@ -174,9 +210,10 @@ def _stats_table(s: DSLStats) -> Table:
 
 @app.command()
 def stats(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
     watch: Optional[float] = typer.Option(
         None,
         "--watch",
@@ -185,7 +222,7 @@ def stats(
     ),
 ):
     """Display DSL line statistics (optionally live with --watch)."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         if watch is None:
             raw = api.get_dsl_stats()
@@ -231,12 +268,13 @@ def stats(
 
 @app.command()
 def info(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
 ):
     """Display device information (model, firmware, serial)."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         raw = api.get_device_info()
         if not raw:
@@ -265,9 +303,10 @@ def info(
 
 @app.command()
 def wan(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
     all_: bool = typer.Option(
         False,
         "--all",
@@ -276,7 +315,7 @@ def wan(
     ),
 ):
     """Show WAN connections (public IP, gateway, DNS, uptime)."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         raw_list = api.get_wan_connections()
         if not raw_list:
@@ -326,9 +365,10 @@ def wan(
 
 @app.command()
 def clients(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
     leases: bool = typer.Option(
         False,
         "--leases",
@@ -337,7 +377,7 @@ def clients(
     ),
 ):
     """List currently connected devices (LAN + Wi-Fi), or DHCP leases."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         if leases:
             rows = api.get_dhcp_leases()
@@ -414,12 +454,13 @@ def _security_label(ap: WifiAP) -> str:
 
 @app.command()
 def wifi(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
 ):
     """Show Wi-Fi radios (2.4/5 GHz) and configured SSIDs (main + guest)."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         radios_raw = api.get_wifi_radios()
         aps_raw = api.get_wifi_aps()
@@ -477,12 +518,13 @@ _URL_FILTER_TARGET_LABEL = {
 
 @app.command()
 def firewall(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
 ):
     """Show firewall summary: level, anti-DoS, URL filter, DMZ."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         level = FirewallLevel.model_validate(api.get_firewall_level() or {})
         dos = FirewallDos.model_validate(api.get_firewall_dos() or {})
@@ -545,9 +587,10 @@ def _remote_range(start: Optional[str], end: Optional[str]) -> str:
 
 @app.command("port-forward")
 def port_forward(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
     all_: bool = typer.Option(
         False,
         "--all",
@@ -556,7 +599,7 @@ def port_forward(
     ),
 ):
     """List configured port-forwarding rules (NAT)."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         rows = api.get_port_forwarding_rules()
         rules = [PortForwardingRule.model_validate(r) for r in rows]
@@ -601,12 +644,13 @@ def port_forward(
 
 @app.command()
 def dns(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
 ):
     """Show modem DNS config + bound hostnames (DHCP + manual)."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         local = DnsLocal.model_validate(api.get_dns_local() or {})
         hosts = [DnsHostname.model_validate(r) for r in api.get_dns_hostnames()]
@@ -657,12 +701,13 @@ def dns(
 
 @app.command("mac-table")
 def mac_table(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
 ):
     """Show the modem bridge's L2 forwarding table (MACs per interface)."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         rows = api.get_mac_table()
         entries = [MacTableEntry.model_validate(r) for r in rows]
@@ -696,12 +741,13 @@ def mac_table(
 
 @app.command()
 def arp(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
 ):
     """Show the modem's ARP cache (IPv4 -> MAC per interface)."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         rows = api.get_arp_table()
         entries = [ArpEntry.model_validate(r) for r in rows]
@@ -737,12 +783,13 @@ def arp(
 
 @app.command()
 def ddns(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
 ):
     """Show DDNS client status (single IGD.DDNSC1)."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         raw = api.get_ddns()
         d = Ddns.model_validate(raw or {})
@@ -795,12 +842,13 @@ def _link_speed(mbps: Optional[int], status: Optional[str]) -> str:
 
 @app.command()
 def eth(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
 ):
     """Show ethernet port status (4 LAN + the eth-WAN uplink)."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         lan_rows = api.get_eth_lan_ports()
         wan_row = api.get_eth_wan_port()
@@ -899,12 +947,13 @@ _DNS_SOURCE_LABEL = {
 
 @app.command()
 def dhcp(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
 ):
     """Show DHCPv4 server config + static reservations (bindings)."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         cfg = DhcpConfig.model_validate(api.get_dhcp_config() or {})
         bindings = [DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings()]
@@ -956,12 +1005,13 @@ def dhcp(
 
 @app.command()
 def dhcp6(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
 ):
     """Show IPv6 DHCPv6 server + Router Advertisement state."""
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         srv = Dhcp6Server.model_validate(api.get_dhcp6_server() or {})
         ra = RouterAdvertisement.model_validate(api.get_ra() or {})
@@ -1027,15 +1077,16 @@ def dhcp6(
 
 @app.command()
 def reboot(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
     """Reboot the modem."""
     if not yes and not typer.confirm("Are you sure you want to reboot the modem?"):
         raise typer.Abort()
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
     try:
         ok = api.reboot()
         if state.json:
@@ -1056,9 +1107,10 @@ def reboot(
 
 @app.command()
 def discover(
-    ip: str = _ip_opt(),
+    host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
     output: str = typer.Option(
         "endpoints.json",
         "--output",
@@ -1084,7 +1136,7 @@ def discover(
     Read-only: only HTTP GET, mutating-looking tags are listed but not fetched.
     Useful to extend the CLI with new commands without guessing endpoints.
     """
-    api = get_api(ip, user, password)
+    api = get_api(host, user, password, insecure)
 
     progress_msg = {"text": "starting..."}
 
