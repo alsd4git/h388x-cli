@@ -166,6 +166,35 @@ class DnsHostname(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class UpnpConfig(BaseModel):
+    """UPnP IGD master switch (OBJ_UPNPCONFIG_ID, single instance)."""
+
+    id: Optional[str] = Field(None, alias="_OBJ_InstID")
+    enabled: Optional[int] = Field(None, alias="EnableUPnPIGD")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class UpnpPortMapping(BaseModel):
+    """A live UPnP IGD port mapping (OBJ_UPNPPORTMAP_ID/Instance).
+
+    No live mappings were observed on this firmware to lock the schema
+    down, so the field aliases match the ZTE/IGD common naming and any
+    additional fields the modem emits are kept (``extra='allow'``) so
+    the JSON view stays complete even when our typed accessors miss
+    a column.
+    """
+
+    id: Optional[str] = Field(None, alias="_OBJ_InstID")
+    description: Optional[str] = Field(None, alias="Description")
+    protocol: Optional[str] = Field(None, alias="Protocol")
+    external_port: Optional[int] = Field(None, alias="ExternalPort")
+    internal_client: Optional[str] = Field(None, alias="InternalClient")
+    internal_port: Optional[int] = Field(None, alias="InternalPort")
+    enabled: Optional[int] = Field(None, alias="PortMappingEnabled")
+    lease_duration: Optional[int] = Field(None, alias="PortMappingLeaseDuration")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+
 class VoipLine(BaseModel):
     """A virtual VoIP line from OBJ_VOIPVPLINE_ID/Instance.
 
