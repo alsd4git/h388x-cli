@@ -31,6 +31,8 @@ from .models import (
     MacTableEntry,
     PortForwardingRule,
     UrlFilterGlobal,
+    VoipLine,
+    VoipSipLine,
     WanConnection,
     WifiAP,
     WifiRadio,
@@ -1069,6 +1071,103 @@ def dhcp6(
         console.print(
             f"[dim]DHCPv6 client bindings (OBJ_DHCP6C_ID): {len(hosts)}[/dim]"
         )
+    finally:
+        api.logout()
+
+
+# ----------------------------------------------------------------------- voip
+
+def _voip_status_style(status: Optional[str]) -> str:
+    if not status:
+        return "-"
+    s = status.lower()
+    if "non" in s:  # "Non registrato"
+        return f"[red]{status}[/red]"
+    if "regist" in s:  # "Registrato"
+        return f"[green]{status}[/green]"
+    return status
+
+
+def _short_line_id(full_id: Optional[str]) -> str:
+    # e.g. IGD.SV.VS1.VP1.VL1 -> VL1, IGD.SV.VS1.VP1.VL1.LS -> VL1.LS
+    if not full_id:
+        return "-"
+    parts = full_id.split(".")
+    return ".".join(parts[-2:]) if parts[-1] == "LS" else parts[-1]
+
+
+def _phy_jacks(phy_list: Optional[str]) -> str:
+    # Comma-separated indices -> TEL1,TEL2 style for readability.
+    if not phy_list:
+        return "[dim]unbound[/dim]"
+    out = []
+    for raw in phy_list.split(","):
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            out.append(f"TEL{int(raw) + 1}")
+        except ValueError:
+            out.append(raw)
+    return ", ".join(out) if out else "[dim]unbound[/dim]"
+
+
+@app.command()
+def voip(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show VoIP line status (SIP registration + physical bindings)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        status = api.get_voip_status()
+        bindings = api.get_voip_bindings()
+
+        lines = [VoipLine.model_validate(r) for r in status.get("OBJ_VOIPVPLINE_ID", [])]
+        sips = [VoipSipLine.model_validate(r) for r in status.get("OBJ_VOIPSIPLINE_ID", [])]
+        bind_lines = [VoipLine.model_validate(r) for r in bindings.get("OBJ_VOIPVPLINE_ID", [])]
+
+        # Index PhyList by virtual-line id (the bindings response uses _InstID,
+        # not _OBJ_InstID, so VoipLine.id_alt is the join key here).
+        phy_by_id = {b.id_alt: b.phy_list for b in bind_lines if b.id_alt}
+
+        if state.json:
+            _emit_json({
+                "lines": [
+                    {**l.model_dump(), "phy_list": phy_by_id.get(l.id_alt or l.id)}
+                    for l in lines
+                ],
+                "sip_lines": [s.model_dump() for s in sips],
+                "bindings": bindings,
+            })
+            return
+
+        # Join SIP line to its parent VL via id prefix (foo.VL1.LS -> foo.VL1).
+        sip_by_vl: dict[str, VoipSipLine] = {}
+        for s in sips:
+            if s.id and s.id.endswith(".LS"):
+                sip_by_vl[s.id[:-3]] = s
+
+        table = Table(title=f"VoIP lines ({len(lines)})")
+        table.add_column("Line", style="cyan")
+        table.add_column("Phone name")
+        table.add_column("Number", style="magenta")
+        table.add_column("Registration")
+        table.add_column("Bound jacks", style="green")
+
+        for l in lines:
+            vl_id = l.id or l.id_alt
+            sip = sip_by_vl.get(vl_id) if vl_id else None
+            table.add_row(
+                _short_line_id(vl_id),
+                (sip.phone_name if sip else None) or "-",
+                (sip.auth_username if sip else None) or "[dim]not set[/dim]",
+                _voip_status_style(l.is_online),
+                _phy_jacks(phy_by_id.get(l.id_alt or l.id)),
+            )
+        console.print(table)
     finally:
         api.logout()
 

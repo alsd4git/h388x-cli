@@ -166,6 +166,40 @@ class DnsHostname(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class VoipLine(BaseModel):
+    """A virtual VoIP line from OBJ_VOIPVPLINE_ID/Instance.
+
+    Two such instances exist (IGD.SV.VS1.VP1.VL1, .VL2). ``IsOnline`` is
+    the localized state the modem renders in the UI; on AGZHM 1.4.4 (TIM)
+    typical values are ``Registrato`` and ``Non registrato``.
+
+    ``PhyList`` (only populated by the flexible-binding endpoint) lists
+    the physical TEL jack indices bound to this virtual line, e.g.
+    ``"0,1"`` = both phone ports ring on this line.
+    """
+
+    id: Optional[str] = Field(None, alias="_OBJ_InstID")
+    id_alt: Optional[str] = Field(None, alias="_InstID")
+    is_online: Optional[str] = Field(None, alias="IsOnline")
+    phy_list: Optional[str] = Field(None, alias="PhyList")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class VoipSipLine(BaseModel):
+    """A SIP user-agent line from OBJ_VOIPSIPLINE_ID/Instance.
+
+    Two instances (LS suffix of each VL). Carries the user-visible phone
+    name (``Telefono1``/``Telefono2``) and the registered SIP auth user,
+    which on TIM lines is the E.164 phone number (``+39...``).
+    """
+
+    id: Optional[str] = Field(None, alias="_OBJ_InstID")
+    phone_name: Optional[str] = Field(None, alias="PhoneName")
+    auth_username: Optional[str] = Field(None, alias="AuthUserName")
+    is_online: Optional[str] = Field(None, alias="IsOnline")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
 class Dhcp6Server(BaseModel):
     """LAN DHCPv6 server configuration (OBJ_DHCP6S_ID, single instance).
 

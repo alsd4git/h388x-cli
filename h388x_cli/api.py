@@ -82,6 +82,12 @@ class ZTEH388XAPI:
     DHCP6_HOSTS_URL = "/?_type=menuData&_tag=dhcp6s_hostinfo_lua.lua"
     RA_URL = "/?_type=menuData&_tag=ra_raservice_lua.lua"
 
+    # --- VoIP (group C: read-only) --------------------------------------
+    VOIP_STATUS_VIEW_URL = "/?_type=menuView&_tag=voipStatus&Menu3Location=0"
+    VOIP_STATUS_URL = "/?_type=menuData&_tag=voip_voipstatus_m.lua"
+    VOIP_FLEX_BIND_VIEW_URL = "/?_type=menuView&_tag=flexibleBind&Menu3Location=0"
+    VOIP_FLEX_BIND_URL = "/?_type=menuData&_tag=voip_flexiblebinding_lua.lua"
+
     NO_CACHE = {"Cache-Control": "no-cache"}
 
     def __init__(
@@ -227,6 +233,37 @@ class ZTEH388XAPI:
             return self._parse_instances(resp.text, root_element)
         except requests.RequestException:
             return []
+
+    def _menudata_multi(
+        self,
+        view_url: str,
+        data_url: str,
+        root_elements: List[str],
+        retry: bool = True,
+    ) -> Dict[str, List[Dict[str, str]]]:
+        """Like ``_menudata`` but parses multiple root elements from a single
+        response. Returns ``{root: [instances]}`` so a single HTTP roundtrip
+        can populate sibling collections (e.g. voipstatus exposes both
+        OBJ_VOIPVPLINE_ID and OBJ_VOIPSIPLINE_ID in the same payload)."""
+        try:
+            self.session.get(
+                f"{self.base_url}{view_url}", headers=self.NO_CACHE, timeout=8
+            )
+            resp = self.session.get(
+                f"{self.base_url}{data_url}", headers=self.NO_CACHE, timeout=8
+            )
+
+            if self._is_session_expired(resp.text):
+                if retry and self.login():
+                    return self._menudata_multi(view_url, data_url, root_elements, retry=False)
+                return {root: [] for root in root_elements}
+
+            return {
+                root: self._parse_instances(resp.text, root)
+                for root in root_elements
+            }
+        except requests.RequestException:
+            return {root: [] for root in root_elements}
 
     # ---------------------------------------------------------------- DSL stats
 
@@ -432,6 +469,37 @@ class ZTEH388XAPI:
             "OBJ_RAIS_ID", retry,
         )
         return rows[0] if rows else {}
+
+    # -------------------------------------------------------------------- VoIP
+
+    def get_voip_status(self, retry: bool = True) -> Dict[str, List[Dict[str, str]]]:
+        """Return VoIP status: virtual lines + SIP lines from voipstatus.
+
+        Single request, two roots:
+        - ``OBJ_VOIPVPLINE_ID``: virtual lines (VL1, VL2) with ``IsOnline``.
+        - ``OBJ_VOIPSIPLINE_ID``: SIP user-agent lines with ``PhoneName``,
+          ``AuthUserName`` (phone number) and ``IsOnline``.
+        """
+        return self._menudata_multi(
+            self.VOIP_STATUS_VIEW_URL, self.VOIP_STATUS_URL,
+            ["OBJ_VOIPVPLINE_ID", "OBJ_VOIPSIPLINE_ID"],
+            retry,
+        )
+
+    def get_voip_bindings(self, retry: bool = True) -> Dict[str, List[Dict[str, str]]]:
+        """Return VoIP physical<->virtual line bindings (flexibleBind page).
+
+        Single request, two roots:
+        - ``OBJ_VOIPHOMELINE_ID``: per-port home-line config (``TermID``,
+          ``OutByWanId``).
+        - ``OBJ_VOIPVPLINE_ID``: per virtual line the comma-separated
+          ``PhyList`` of bound physical jacks (e.g. ``0,1``).
+        """
+        return self._menudata_multi(
+            self.VOIP_FLEX_BIND_VIEW_URL, self.VOIP_FLEX_BIND_URL,
+            ["OBJ_VOIPHOMELINE_ID", "OBJ_VOIPVPLINE_ID"],
+            retry,
+        )
 
     # ------------------------------------------------------------------ reboot
 
