@@ -30,6 +30,8 @@ from .models import (
     FirewallLevel,
     MacTableEntry,
     PortForwardingRule,
+    UpnpConfig,
+    UpnpPortMapping,
     UrlFilterGlobal,
     VoipLine,
     VoipSipLine,
@@ -1168,6 +1170,67 @@ def voip(
                 _phy_jacks(phy_by_id.get(l.id_alt or l.id)),
             )
         console.print(table)
+    finally:
+        api.logout()
+
+
+# ----------------------------------------------------------------------- upnp
+
+@app.command()
+def upnp(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show UPnP IGD state + live port mappings."""
+    api = get_api(host, user, password, insecure)
+    try:
+        cfg = UpnpConfig.model_validate(api.get_upnp_config() or {})
+        maps = [UpnpPortMapping.model_validate(r) for r in api.get_upnp_portmappings()]
+
+        if state.json:
+            _emit_json({
+                "config": cfg.model_dump(),
+                "port_mappings": [m.model_dump() for m in maps],
+            })
+            return
+
+        cfg_table = Table(title="UPnP IGD")
+        cfg_table.add_column("Field", style="cyan")
+        cfg_table.add_column("Value", style="magenta")
+        cfg_table.add_row("State", _onoff(cfg.enabled))
+        console.print(cfg_table)
+
+        if not maps:
+            console.print(
+                "[dim]No live UPnP port mappings (clients can request "
+                "them only while UPnP is ON).[/dim]"
+            )
+            return
+
+        maps_table = Table(title=f"UPnP port mappings ({len(maps)})")
+        maps_table.add_column("Status")
+        maps_table.add_column("Description", style="cyan")
+        maps_table.add_column("Proto", style="yellow")
+        maps_table.add_column("WAN port", style="magenta")
+        maps_table.add_column("LAN client", style="green")
+        maps_table.add_column("LAN port", style="magenta")
+        maps_table.add_column("Lease", style="dim")
+        for m in maps:
+            lease = "perm" if m.lease_duration == 0 else (
+                f"{m.lease_duration}s" if m.lease_duration is not None else "-"
+            )
+            maps_table.add_row(
+                _onoff(m.enabled),
+                m.description or "-",
+                m.protocol or "-",
+                str(m.external_port) if m.external_port is not None else "-",
+                m.internal_client or "-",
+                str(m.internal_port) if m.internal_port is not None else "-",
+                lease,
+            )
+        console.print(maps_table)
     finally:
         api.logout()
 

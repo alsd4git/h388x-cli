@@ -88,6 +88,11 @@ class ZTEH388XAPI:
     VOIP_FLEX_BIND_VIEW_URL = "/?_type=menuView&_tag=flexibleBind&Menu3Location=0"
     VOIP_FLEX_BIND_URL = "/?_type=menuData&_tag=voip_flexiblebinding_lua.lua"
 
+    # --- UPnP (group C: read-only) --------------------------------------
+    UPNP_VIEW_URL = "/?_type=menuView&_tag=upnp&Menu3Location=0"
+    UPNP_CONFIG_URL = "/?_type=menuData&_tag=upnp_upnp_m.lua"
+    UPNP_PORTS_URL = "/?_type=menuData&_tag=upnp_portmapping_lua.lua"
+
     NO_CACHE = {"Cache-Control": "no-cache"}
 
     def __init__(
@@ -499,6 +504,23 @@ class ZTEH388XAPI:
             self.VOIP_FLEX_BIND_VIEW_URL, self.VOIP_FLEX_BIND_URL,
             ["OBJ_VOIPHOMELINE_ID", "OBJ_VOIPVPLINE_ID"],
             retry,
+        )
+
+    # -------------------------------------------------------------------- UPnP
+
+    def get_upnp_config(self, retry: bool = True) -> Dict[str, str]:
+        """Return UPnP IGD master switch (OBJ_UPNPCONFIG_ID, single)."""
+        rows = self._menudata(
+            self.UPNP_VIEW_URL, self.UPNP_CONFIG_URL,
+            "OBJ_UPNPCONFIG_ID", retry,
+        )
+        return rows[0] if rows else {}
+
+    def get_upnp_portmappings(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return live UPnP port mappings (OBJ_UPNPPORTMAP_ID)."""
+        return self._menudata(
+            self.UPNP_VIEW_URL, self.UPNP_PORTS_URL,
+            "OBJ_UPNPPORTMAP_ID", retry,
         )
 
     # ------------------------------------------------------------------ reboot
