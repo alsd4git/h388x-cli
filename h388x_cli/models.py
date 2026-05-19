@@ -166,6 +166,61 @@ class DnsHostname(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class Dms(BaseModel):
+    """DLNA / DMS media-server config (OBJ_DMS_ID, single instance).
+
+    On AGZHM 1.4.4 the server is off by default; ``PathRoot`` /
+    ``ContentList`` point at ``/mnt`` (where the modem mounts attached
+    USB storage). ``RescanTime`` is in seconds; ``0`` means no periodic
+    rescan (only on demand).
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    enabled: Optional[int] = Field(None, alias="Enable")
+    name: Optional[str] = Field(None, alias="DmsName")
+    path_root: Optional[str] = Field(None, alias="PathRoot")
+    content_list: Optional[str] = Field(None, alias="ContentList")
+    rescan_time: Optional[int] = Field(None, alias="RescanTime")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class FtpServer(BaseModel):
+    """FTP server master switch (OBJ_FMFTPSERVERCFG_ID, single)."""
+
+    id: Optional[str] = Field(None, alias="_OBJ_InstID")
+    enabled: Optional[int] = Field(None, alias="FtpEnable")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class FtpUser(BaseModel):
+    """A single FTP user (OBJ_FMFTPUSER_ID/Instance)."""
+
+    id: Optional[str] = Field(None, alias="_OBJ_InstID")
+    username: Optional[str] = Field(None, alias="Username")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class NanoCdnStatus(BaseModel):
+    """NanoCDN runtime stats (OBJ_NANOCDN_STATUS_ID, single instance).
+
+    NanoCDN is the TIM/IPTV multicast-to-unicast offload baked into the
+    Hub+. ``Status`` is a numeric state (``1`` = running on observed
+    units); ``McastFrame`` is the lifetime counter of multicast frames
+    the offload has processed. The Min/Max bitrate fields are in bps.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    status: Optional[int] = Field(None, alias="Status")
+    sessions: Optional[int] = Field(None, alias="SessionNumber")
+    min_sessions: Optional[int] = Field(None, alias="MinSessionNumber")
+    max_sessions: Optional[int] = Field(None, alias="MaxSessionNumber")
+    mcast_bitrate: Optional[int] = Field(None, alias="MulticastsBitrate")
+    min_mcast_bitrate: Optional[int] = Field(None, alias="MinMulticastsBitrate")
+    max_mcast_bitrate: Optional[int] = Field(None, alias="MaxMulticastsBitrate")
+    mcast_frames: Optional[int] = Field(None, alias="McastFrame")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
 class UpnpConfig(BaseModel):
     """UPnP IGD master switch (OBJ_UPNPCONFIG_ID, single instance)."""
 
