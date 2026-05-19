@@ -93,6 +93,18 @@ class ZTEH388XAPI:
     UPNP_CONFIG_URL = "/?_type=menuData&_tag=upnp_upnp_m.lua"
     UPNP_PORTS_URL = "/?_type=menuData&_tag=upnp_portmapping_lua.lua"
 
+    # --- DLNA / DMS (group C: read-only) --------------------------------
+    DMS_VIEW_URL = "/?_type=menuView&_tag=dms&Menu3Location=0"
+    DMS_URL = "/?_type=menuData&_tag=dms_dms_lua.lua"
+
+    # --- FTP server (group C: read-only) --------------------------------
+    FTP_VIEW_URL = "/?_type=menuView&_tag=ftp&Menu3Location=0"
+    FTP_URL = "/?_type=menuData&_tag=ftp_ftpserver_m.lua"
+
+    # --- NanoCDN status (group C: read-only) ----------------------------
+    NANOCDN_VIEW_URL = "/?_type=menuView&_tag=mabrNanoCDN&Menu3Location=0"
+    NANOCDN_URL = "/?_type=menuData&_tag=nanocdn_lua.lua"
+
     NO_CACHE = {"Cache-Control": "no-cache"}
 
     def __init__(
@@ -522,6 +534,41 @@ class ZTEH388XAPI:
             self.UPNP_VIEW_URL, self.UPNP_PORTS_URL,
             "OBJ_UPNPPORTMAP_ID", retry,
         )
+
+    # ---------------------------------------------------------- DLNA / DMS
+
+    def get_dms(self, retry: bool = True) -> Dict[str, str]:
+        """Return the DLNA / DMS media-server config (OBJ_DMS_ID, single)."""
+        rows = self._menudata(
+            self.DMS_VIEW_URL, self.DMS_URL,
+            "OBJ_DMS_ID", retry,
+        )
+        return rows[0] if rows else {}
+
+    # ------------------------------------------------------------ FTP server
+
+    def get_ftp(self, retry: bool = True) -> Dict[str, List[Dict[str, str]]]:
+        """Return FTP server state: config (OBJ_FMFTPSERVERCFG_ID) + users (OBJ_FMFTPUSER_ID)."""
+        return self._menudata_multi(
+            self.FTP_VIEW_URL, self.FTP_URL,
+            ["OBJ_FMFTPSERVERCFG_ID", "OBJ_FMFTPUSER_ID"],
+            retry,
+        )
+
+    # -------------------------------------------------- NanoCDN (TIM IPTV)
+
+    def get_nanocdn(self, retry: bool = True) -> Dict[str, str]:
+        """Return NanoCDN runtime stats (OBJ_NANOCDN_STATUS_ID, single).
+
+        NanoCDN is the TIM/IPTV multicast-to-unicast offload running on
+        the modem; the page exposes ``Status``, current/min/max session
+        count and multicast bitrate counters.
+        """
+        rows = self._menudata(
+            self.NANOCDN_VIEW_URL, self.NANOCDN_URL,
+            "OBJ_NANOCDN_STATUS_ID", retry,
+        )
+        return rows[0] if rows else {}
 
     # ------------------------------------------------------------------ reboot
 

@@ -20,7 +20,11 @@ from .models import (
     Dhcp6Server,
     DhcpBinding,
     DhcpConfig,
+    Dms,
     EthInterface,
+    FtpServer,
+    FtpUser,
+    NanoCdnStatus,
     RouterAdvertisement,
     Dmz,
     DnsHostname,
@@ -1231,6 +1235,135 @@ def upnp(
                 lease,
             )
         console.print(maps_table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------------ dms
+
+@app.command()
+def dms(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show DLNA / DMS media-server config (USB sharing)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        d = Dms.model_validate(api.get_dms() or {})
+
+        if state.json:
+            _emit_json(d.model_dump())
+            return
+
+        table = Table(title="DLNA media server")
+        table.add_column("Field", style="cyan")
+        table.add_column("Value", style="magenta")
+        table.add_row("State", _onoff(d.enabled))
+        table.add_row("Name", d.name or "-")
+        table.add_row("Root path", d.path_root or "-")
+        table.add_row("Content list", d.content_list or "-")
+        table.add_row(
+            "Rescan",
+            "on demand only" if d.rescan_time == 0 else _format_lease(d.rescan_time),
+        )
+        console.print(table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------------ ftp
+
+@app.command()
+def ftp(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show FTP server state + configured FTP users."""
+    api = get_api(host, user, password, insecure)
+    try:
+        data = api.get_ftp()
+        cfg_rows = data.get("OBJ_FMFTPSERVERCFG_ID", [])
+        user_rows = data.get("OBJ_FMFTPUSER_ID", [])
+        cfg = FtpServer.model_validate(cfg_rows[0] if cfg_rows else {})
+        users = [FtpUser.model_validate(r) for r in user_rows]
+
+        if state.json:
+            _emit_json({
+                "config": cfg.model_dump(),
+                "users": [u.model_dump() for u in users],
+            })
+            return
+
+        cfg_table = Table(title="FTP server")
+        cfg_table.add_column("Field", style="cyan")
+        cfg_table.add_column("Value", style="magenta")
+        cfg_table.add_row("State", _onoff(cfg.enabled))
+        console.print(cfg_table)
+
+        users_table = Table(title=f"FTP users ({len(users)})")
+        users_table.add_column("Username", style="cyan")
+        users_table.add_column("ID", style="dim")
+        for u in users:
+            users_table.add_row(u.username or "-", u.id or "-")
+        console.print(users_table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------- nanocdn
+
+@app.command()
+def nanocdn(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show NanoCDN runtime stats (TIM IPTV multicast offload)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        n = NanoCdnStatus.model_validate(api.get_nanocdn() or {})
+
+        if state.json:
+            _emit_json(n.model_dump())
+            return
+
+        def _bps(v: Optional[int]) -> str:
+            if v is None:
+                return "-"
+            if v >= 1_000_000:
+                return f"{v / 1_000_000:.2f} Mbps"
+            if v >= 1_000:
+                return f"{v / 1_000:.1f} kbps"
+            return f"{v} bps"
+
+        table = Table(title="NanoCDN")
+        table.add_column("Field", style="cyan")
+        table.add_column("Value", style="magenta")
+        table.add_row(
+            "Status",
+            ("[green]running[/green]" if n.status == 1 else f"raw={n.status}")
+            if n.status is not None else "-",
+        )
+        table.add_row(
+            "Sessions (now / min / max)",
+            f"{n.sessions if n.sessions is not None else '-'}"
+            f" / {n.min_sessions if n.min_sessions is not None else '-'}"
+            f" / {n.max_sessions if n.max_sessions is not None else '-'}",
+        )
+        table.add_row(
+            "Mcast bitrate (now / min / max)",
+            f"{_bps(n.mcast_bitrate)} / {_bps(n.min_mcast_bitrate)} / {_bps(n.max_mcast_bitrate)}",
+        )
+        table.add_row(
+            "Mcast frames (lifetime)",
+            str(n.mcast_frames) if n.mcast_frames is not None else "-",
+        )
+        console.print(table)
     finally:
         api.logout()
 
