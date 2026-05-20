@@ -105,6 +105,18 @@ class ZTEH388XAPI:
     NANOCDN_VIEW_URL = "/?_type=menuView&_tag=mabrNanoCDN&Menu3Location=0"
     NANOCDN_URL = "/?_type=menuData&_tag=nanocdn_lua.lua"
 
+    # --- Wi-Fi advanced (group D: read-only) ----------------------------
+    # wlanBasic is already used as WLAN_BASIC_VIEW_URL for the radios list;
+    # the same parent view also arms the advanced radio config endpoint.
+    WLAN_ADV_RADIOS_URL = "/?_type=menuData&_tag=wlan_basicadconf_lua.lua"
+    WLAN_ADVANCED_VIEW_URL = "/?_type=menuView&_tag=wlanAdvanced&Menu3Location=0"
+    WLAN_MAC_FILTER_POLICY_URL = "/?_type=menuData&_tag=wlan_macfilteraclpolicy_lua.lua"
+    WLAN_MAC_FILTER_RULES_URL = "/?_type=menuData&_tag=wlan_macfilterrule_m.lua"
+    WLAN_SCHEDULE_VIEW_URL = "/?_type=menuView&_tag=WlanWiFiSchedule&Menu3Location=0"
+    WLAN_SCHEDULE_URL = "/?_type=menuData&_tag=wlan_wifi_schedule_lua.lua"
+    WLAN_BSS_STEERING_VIEW_URL = "/?_type=menuView&_tag=wlanBssSteeringOnoff&Menu3Location=0"
+    WLAN_BSS_STEERING_URL = "/?_type=menuData&_tag=wlan_BssSteeringOnoff_lua.lua"
+
     NO_CACHE = {"Cache-Control": "no-cache"}
 
     def __init__(
@@ -569,6 +581,62 @@ class ZTEH388XAPI:
             "OBJ_NANOCDN_STATUS_ID", retry,
         )
         return rows[0] if rows else {}
+
+    # ----------------------------------------------------- Wi-Fi advanced
+
+    def get_wifi_advanced(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return advanced per-radio settings (OBJ_WLANSETTING_ID, 2 rows).
+
+        Same root element as ``get_wifi_radios()``, but the advanced
+        endpoint exposes the channel/bandwidth/power/standard config
+        instead of just the on/off state.
+        """
+        return self._menudata(
+            self.WLAN_BASIC_VIEW_URL, self.WLAN_ADV_RADIOS_URL,
+            "OBJ_WLANSETTING_ID", retry,
+        )
+
+    def get_wifi_mac_filter(self, retry: bool = True) -> Dict[str, List[Dict[str, str]]]:
+        """Return per-AP MAC filter policy + the (possibly empty) rule list.
+
+        - ``OBJ_WLANACL_ID``: one row per AP (DEV.WIFI.AP1..AP8) with
+          ``ACLPolicy`` = ``Disabled`` / ``Allow`` / ``Deny``.
+        - ``OBJ_ACLCFG_ID``: zero or more MAC entries (empty when no
+          ACL is configured).
+        """
+        # The MAC filter rules endpoint needs the wlanAdvanced view to
+        # populate; the policy endpoint works under the same view too.
+        return self._menudata_multi(
+            self.WLAN_ADVANCED_VIEW_URL,
+            self.WLAN_MAC_FILTER_POLICY_URL,
+            ["OBJ_WLANACL_ID"],
+            retry,
+        ) | self._menudata_multi(
+            self.WLAN_ADVANCED_VIEW_URL,
+            self.WLAN_MAC_FILTER_RULES_URL,
+            ["OBJ_ACLCFG_ID"],
+            retry,
+        )
+
+    def get_wifi_schedule(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return Wi-Fi scheduling rules (OBJ_WLAN_WIFISCHEDULE)."""
+        return self._menudata(
+            self.WLAN_SCHEDULE_VIEW_URL, self.WLAN_SCHEDULE_URL,
+            "OBJ_WLAN_WIFISCHEDULE", retry,
+        )
+
+    def get_band_steering(self, retry: bool = True) -> Dict[str, List[Dict[str, str]]]:
+        """Return EasyMesh + band steering master switches (single page).
+
+        Same response carries two siblings:
+        - ``OBJ_EASYMESHENABLE_ID`` (EasyMesh root toggle)
+        - ``OBJ_BANDSTEERENABLE_ID`` (band steering toggle)
+        """
+        return self._menudata_multi(
+            self.WLAN_BSS_STEERING_VIEW_URL, self.WLAN_BSS_STEERING_URL,
+            ["OBJ_EASYMESHENABLE_ID", "OBJ_BANDSTEERENABLE_ID"],
+            retry,
+        )
 
     # ------------------------------------------------------------------ reboot
 
