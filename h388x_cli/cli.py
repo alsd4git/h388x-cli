@@ -36,6 +36,8 @@ from .models import (
     NanoCdnStatus,
     PortForwardingRule,
     RouterAdvertisement,
+    TopologyAgent,
+    TopologyController,
     UpnpConfig,
     UpnpPortMapping,
     UrlFilterGlobal,
@@ -1572,6 +1574,104 @@ def band_steering(
         table.add_row("EasyMesh", _onoff(mesh.enabled))
         table.add_row("Band steering", _onoff(bs.enabled))
         console.print(table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------ topology
+
+@app.command()
+def topology(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show EasyMesh topology (controller + agent layers)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        data = api.get_topology()
+        controller_raw = data.get("controllerData") or {}
+        controller = (
+            TopologyController.model_validate(controller_raw)
+            if controller_raw
+            else None
+        )
+
+        def _agents(layer: Dict[str, Any]) -> List[TopologyAgent]:
+            instances = layer.get("Instance") or []
+            if isinstance(instances, dict):
+                instances = [instances]
+            return [TopologyAgent.model_validate(i) for i in instances]
+
+        layer1 = data.get("agentlay1") or {}
+        layer2 = data.get("agentlay2") or {}
+        agents1 = _agents(layer1)
+        agents2 = _agents(layer2)
+
+        if state.json:
+            _emit_json({
+                "controller": controller.model_dump() if controller else None,
+                "agentlay1": {
+                    "count": layer1.get("MGET_INST_NUM", 0),
+                    "agents": [a.model_dump() for a in agents1],
+                },
+                "agentlay2": {
+                    "count": layer2.get("MGET_INST_NUM", 0),
+                    "agents": [a.model_dump() for a in agents2],
+                },
+            })
+            return
+
+        if controller:
+            table = Table(title="Mesh controller")
+            table.add_column("Field", style="cyan")
+            table.add_column("Value", style="magenta")
+            table.add_row("Device", controller.device_name or "-")
+            table.add_row("Manufacturer", controller.manufacturer or "-")
+            table.add_row("Software", controller.software_version or "-")
+            table.add_row("IP", controller.ip_address or "-")
+            table.add_row("MAC", controller.mac or "-")
+            table.add_row("Access type", controller.access_type or "-")
+            table.add_row("Link speed", controller.link_speed or "-")
+            table.add_row("BH STA RSSI", controller.bh_sta_rssi or "-")
+            table.add_row(
+                "Associated devices",
+                str(controller.associated_devices)
+                if controller.associated_devices is not None
+                else "-",
+            )
+            console.print(table)
+        else:
+            console.print("[yellow]No controller data returned.[/yellow]")
+
+        for label, layer, agents in (
+            ("Mesh agents (layer 1)", layer1, agents1),
+            ("Mesh agents (layer 2)", layer2, agents2),
+        ):
+            count = layer.get("MGET_INST_NUM", 0)
+            if not agents:
+                console.print(f"[dim]{label}: none (MGET_INST_NUM={count})[/dim]")
+                continue
+            agent_table = Table(title=f"{label} ({count})")
+            agent_table.add_column("Device", style="cyan")
+            agent_table.add_column("MAC", style="white")
+            agent_table.add_column("IP", style="white")
+            agent_table.add_column("Access", style="magenta")
+            agent_table.add_column("Link", style="green")
+            agent_table.add_column("RSSI", style="yellow")
+            agent_table.add_column("SW", style="dim")
+            for a in agents:
+                agent_table.add_row(
+                    a.device_name or "-",
+                    a.mac or "-",
+                    a.ip_address or "-",
+                    a.access_type or "-",
+                    a.link_speed or "-",
+                    a.bh_sta_rssi or "-",
+                    a.software_version or "-",
+                )
+            console.print(agent_table)
     finally:
         api.logout()
 
