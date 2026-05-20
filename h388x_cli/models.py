@@ -166,6 +166,52 @@ class DnsHostname(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class TopologyController(BaseModel):
+    """EasyMesh controller node (``controllerData`` from topo_lua.lua).
+
+    The controller is the modem itself. ``accdevCount`` is the number
+    of stations the controller currently sees (matches the figure on
+    the home page). ``AccessType`` is the link-up state used by the
+    web UI; observed value ``Connecting`` even when the modem is
+    fully online — likely ZTE shorthand for "this node is the root"
+    rather than a live transition.
+    """
+
+    inst_id: Optional[str] = Field(None, alias="instID")
+    device_name: Optional[str] = Field(None, alias="DeviceName")
+    manufacturer: Optional[str] = Field(None, alias="Manufacturer")
+    software_version: Optional[str] = Field(None, alias="SoftwareVer")
+    mac: Optional[str] = Field(None, alias="MacAddr")
+    ip_address: Optional[str] = Field(None, alias="IpAddr")
+    access_type: Optional[str] = Field(None, alias="AccessType")
+    link_speed: Optional[str] = Field(None, alias="LinkSpeed")
+    bh_sta_rssi: Optional[str] = Field(None, alias="BhStaRssi")
+    associated_devices: Optional[int] = Field(None, alias="accdevCount")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+
+class TopologyAgent(BaseModel):
+    """EasyMesh agent / satellite node from a topology layer.
+
+    Each ``agentlayN`` block in topo_lua.lua carries ``MGET_INST_NUM``
+    plus zero or more ``Instance`` entries when satellites are joined.
+    No live satellite was captured so the field set is permissive;
+    ``extra='allow'`` lets the JSON view stay complete even if the
+    modem emits agent-specific fields we don't model yet.
+    """
+
+    inst_id: Optional[str] = Field(None, alias="instID")
+    device_name: Optional[str] = Field(None, alias="DeviceName")
+    manufacturer: Optional[str] = Field(None, alias="Manufacturer")
+    software_version: Optional[str] = Field(None, alias="SoftwareVer")
+    mac: Optional[str] = Field(None, alias="MacAddr")
+    ip_address: Optional[str] = Field(None, alias="IpAddr")
+    access_type: Optional[str] = Field(None, alias="AccessType")
+    link_speed: Optional[str] = Field(None, alias="LinkSpeed")
+    bh_sta_rssi: Optional[str] = Field(None, alias="BhStaRssi")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+
 class WifiRadioAdvanced(BaseModel):
     """Per-radio advanced config (OBJ_WLANSETTING_ID/Instance, ``basicadconf``).
 

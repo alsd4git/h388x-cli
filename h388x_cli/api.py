@@ -105,6 +105,10 @@ class ZTEH388XAPI:
     NANOCDN_VIEW_URL = "/?_type=menuView&_tag=mabrNanoCDN&Menu3Location=0"
     NANOCDN_URL = "/?_type=menuData&_tag=nanocdn_lua.lua"
 
+    # --- Mesh topology (group E: read-only) -----------------------------
+    TOPOLOGY_VIEW_URL = "/?_type=menuView&_tag=mmTopology&Menu3Location=0"
+    TOPOLOGY_URL = "/?_type=menuData&_tag=topo_lua.lua"
+
     # --- Wi-Fi advanced (group D: read-only) ----------------------------
     # wlanBasic is already used as WLAN_BASIC_VIEW_URL for the radios list;
     # the same parent view also arms the advanced radio config endpoint.
@@ -624,6 +628,51 @@ class ZTEH388XAPI:
             self.WLAN_SCHEDULE_VIEW_URL, self.WLAN_SCHEDULE_URL,
             "OBJ_WLAN_WIFISCHEDULE", retry,
         )
+
+    # --------------------------------------------------------- Mesh topology
+
+    def _menudata_raw(
+        self,
+        view_url: str,
+        data_url: str,
+        retry: bool = True,
+    ) -> str:
+        """Like ``_menudata`` but returns the raw response body. Used for
+        the few endpoints that emit JSON (e.g. ``topo_lua.lua``) instead
+        of the standard ZTE XML ``Instance/ParaName/ParaValue`` shape."""
+        try:
+            self.session.get(
+                f"{self.base_url}{view_url}", headers=self.NO_CACHE, timeout=8
+            )
+            resp = self.session.get(
+                f"{self.base_url}{data_url}", headers=self.NO_CACHE, timeout=8
+            )
+            if self._is_session_expired(resp.text):
+                if retry and self.login():
+                    return self._menudata_raw(view_url, data_url, retry=False)
+                return ""
+            return resp.text
+        except requests.RequestException:
+            return ""
+
+    def get_topology(self, retry: bool = True) -> Dict[str, Any]:
+        """Return the EasyMesh topology view as a plain dict.
+
+        The endpoint replies with JSON (rare for AGZHM): one
+        ``controllerData`` describing the controller (the modem itself)
+        plus ``agentlay1`` / ``agentlay2`` for the two extender layers,
+        each carrying ``MGET_INST_NUM`` and an optional ``Instance``
+        list when satellites are present.
+        """
+        import json as _json
+
+        body = self._menudata_raw(self.TOPOLOGY_VIEW_URL, self.TOPOLOGY_URL, retry)
+        if not body:
+            return {}
+        try:
+            return _json.loads(body)
+        except _json.JSONDecodeError:
+            return {}
 
     def get_band_steering(self, retry: bool = True) -> Dict[str, List[Dict[str, str]]]:
         """Return EasyMesh + band steering master switches (single page).
