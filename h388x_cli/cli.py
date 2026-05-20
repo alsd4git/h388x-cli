@@ -14,6 +14,7 @@ from .api import ZTEH388XAPI
 from .discovery import Spider
 from .models import (
     ArpEntry,
+    BandSteeringState,
     Client,
     Ddns,
     DeviceInfo,
@@ -21,27 +22,32 @@ from .models import (
     DhcpBinding,
     DhcpConfig,
     Dms,
-    EthInterface,
-    FtpServer,
-    FtpUser,
-    NanoCdnStatus,
-    RouterAdvertisement,
+    DSLStats,
     Dmz,
     DnsHostname,
     DnsLocal,
-    DSLStats,
+    EasyMeshState,
+    EthInterface,
     FirewallDos,
     FirewallLevel,
+    FtpServer,
+    FtpUser,
     MacTableEntry,
+    NanoCdnStatus,
     PortForwardingRule,
+    RouterAdvertisement,
     UpnpConfig,
     UpnpPortMapping,
     UrlFilterGlobal,
     VoipLine,
     VoipSipLine,
     WanConnection,
+    WifiAclPolicy,
+    WifiAclRule,
     WifiAP,
     WifiRadio,
+    WifiRadioAdvanced,
+    WifiSchedule,
 )
 
 load_dotenv()
@@ -1363,6 +1369,208 @@ def nanocdn(
             "Mcast frames (lifetime)",
             str(n.mcast_frames) if n.mcast_frames is not None else "-",
         )
+        console.print(table)
+    finally:
+        api.logout()
+
+
+# ----------------------------------------------------------- wifi-advanced
+
+@app.command("wifi-advanced")
+def wifi_advanced(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show per-radio advanced Wi-Fi config (channel, BW, power, country)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        radios = [WifiRadioAdvanced.model_validate(r) for r in api.get_wifi_advanced()]
+
+        if state.json:
+            _emit_json([r.model_dump() for r in radios])
+            return
+
+        table = Table(title=f"Wi-Fi radios — advanced ({len(radios)})")
+        table.add_column("Radio", style="cyan")
+        table.add_column("Band", style="magenta")
+        table.add_column("Channel")
+        table.add_column("Width")
+        table.add_column("TxPower")
+        table.add_column("Country", style="dim")
+        table.add_column("Standard", style="dim")
+        for r in radios:
+            ch = (
+                f"{r.channel} ([dim]auto[/dim])" if r.auto_channel and r.channel is not None
+                else (str(r.channel) if r.channel is not None else "-")
+            )
+            table.add_row(
+                r.id or "-",
+                r.band or "-",
+                ch,
+                r.bandwidth or "-",
+                r.tx_power or "-",
+                r.country_code or "-",
+                r.standard or "-",
+            )
+        console.print(table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------ wifi-acl
+
+@app.command("wifi-acl")
+def wifi_acl(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show per-SSID MAC filter policy + the configured ACL rules."""
+    api = get_api(host, user, password, insecure)
+    try:
+        data = api.get_wifi_mac_filter()
+        policies = [WifiAclPolicy.model_validate(r) for r in data.get("OBJ_WLANACL_ID", [])]
+        rules = [WifiAclRule.model_validate(r) for r in data.get("OBJ_ACLCFG_ID", [])]
+
+        if state.json:
+            _emit_json({
+                "policies": [p.model_dump() for p in policies],
+                "rules": [r.model_dump() for r in rules],
+            })
+            return
+
+        pol_table = Table(title=f"MAC filter policy ({len(policies)})")
+        pol_table.add_column("SSID", style="cyan")
+        pol_table.add_column("AP ID", style="dim")
+        pol_table.add_column("Policy", style="magenta")
+        for p in policies:
+            label = p.policy or "-"
+            if label.lower() == "disabled":
+                label = f"[dim]{label}[/dim]"
+            pol_table.add_row(p.alias or "-", p.id or "-", label)
+        console.print(pol_table)
+
+        if not rules:
+            console.print(
+                "[dim]No MAC ACL entries configured "
+                "(rules apply only when an SSID's policy is Allow/Deny).[/dim]"
+            )
+            return
+
+        rule_table = Table(title=f"MAC ACL entries ({len(rules)})")
+        rule_table.add_column("MAC", style="cyan")
+        rule_table.add_column("AP / parent", style="green")
+        rule_table.add_column("ID", style="dim")
+        for r in rules:
+            rule_table.add_row(r.mac or "-", r.ap_id or "-", r.id or "-")
+        console.print(rule_table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------ wifi-schedule
+
+_DAY_NAMES = [
+    ("day_mon", "Mon"),
+    ("day_tue", "Tue"),
+    ("day_wed", "Wed"),
+    ("day_thu", "Thu"),
+    ("day_fri", "Fri"),
+    ("day_sat", "Sat"),
+    ("day_sun", "Sun"),
+]
+
+
+def _schedule_days(s: WifiSchedule) -> str:
+    flags = [name for attr, name in _DAY_NAMES if getattr(s, attr)]
+    if not flags:
+        return "[dim]no days[/dim]"
+    if len(flags) == 7:
+        return "every day"
+    return ",".join(flags)
+
+
+def _schedule_window(s: WifiSchedule) -> str:
+    if any(v is None for v in (s.start_hour, s.start_min, s.end_hour, s.end_min)):
+        return "-"
+    return f"{s.start_hour:02d}:{s.start_min:02d} - {s.end_hour:02d}:{s.end_min:02d}"
+
+
+_SCHEDULE_ACTION_LABEL = {
+    0: "Wi-Fi OFF in window",
+    1: "Wi-Fi ON in window",
+}
+
+
+@app.command("wifi-schedule")
+def wifi_schedule(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show recurring Wi-Fi on/off schedules per AP."""
+    api = get_api(host, user, password, insecure)
+    try:
+        schedules = [WifiSchedule.model_validate(r) for r in api.get_wifi_schedule()]
+
+        if state.json:
+            _emit_json([s.model_dump() for s in schedules])
+            return
+
+        table = Table(title=f"Wi-Fi schedule ({len(schedules)})")
+        table.add_column("AP", style="cyan")
+        table.add_column("State")
+        table.add_column("Window", style="magenta")
+        table.add_column("Days", style="green")
+        table.add_column("Action")
+        for s in schedules:
+            action = _SCHEDULE_ACTION_LABEL.get(s.action, str(s.action) if s.action is not None else "-")
+            table.add_row(
+                (s.id or "-").rsplit(".", 1)[-1],
+                _onoff(s.enabled),
+                _schedule_window(s),
+                _schedule_days(s),
+                action,
+            )
+        console.print(table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------- band-steering
+
+@app.command("band-steering")
+def band_steering(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show EasyMesh + band-steering master switches."""
+    api = get_api(host, user, password, insecure)
+    try:
+        data = api.get_band_steering()
+        mesh_rows = data.get("OBJ_EASYMESHENABLE_ID", [])
+        bs_rows = data.get("OBJ_BANDSTEERENABLE_ID", [])
+        mesh = EasyMeshState.model_validate(mesh_rows[0] if mesh_rows else {})
+        bs = BandSteeringState.model_validate(bs_rows[0] if bs_rows else {})
+
+        if state.json:
+            _emit_json({
+                "easy_mesh": mesh.model_dump(),
+                "band_steering": bs.model_dump(),
+            })
+            return
+
+        table = Table(title="EasyMesh / band steering")
+        table.add_column("Feature", style="cyan")
+        table.add_column("State", style="magenta")
+        table.add_row("EasyMesh", _onoff(mesh.enabled))
+        table.add_row("Band steering", _onoff(bs.enabled))
         console.print(table)
     finally:
         api.logout()

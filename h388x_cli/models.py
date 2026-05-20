@@ -166,6 +166,103 @@ class DnsHostname(BaseModel):
     model_config = {"populate_by_name": True, "extra": "ignore"}
 
 
+class WifiRadioAdvanced(BaseModel):
+    """Per-radio advanced config (OBJ_WLANSETTING_ID/Instance, ``basicadconf``).
+
+    Same root as ``WifiRadio`` but a different ZTE endpoint that exposes
+    the channel/bandwidth/power knobs instead of the on/off state.
+    ``BandWidth`` is e.g. ``Auto``, ``20MHz``, ``40MHz``, ``80MHz``.
+    ``TxPower`` is the raw string the modem stores (``100%``, ``75%``...).
+    ``CountryCode`` is the ZTE 3-letter region code (``ITI`` = Italy).
+    ``CardMode`` / ``Standard`` are comma-separated PHY mode lists.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    band: Optional[str] = Field(None, alias="Band")
+    auto_channel: Optional[int] = Field(None, alias="AutoChannelEnabled")
+    channel: Optional[int] = Field(None, alias="Channel")
+    bandwidth: Optional[str] = Field(None, alias="BandWidth")
+    side_band: Optional[str] = Field(None, alias="SideBand")
+    tx_power: Optional[str] = Field(None, alias="TxPower")
+    country_code: Optional[str] = Field(None, alias="CountryCode")
+    standard: Optional[str] = Field(None, alias="Standard")
+    card_mode: Optional[str] = Field(None, alias="CardMode")
+    beacon_interval: Optional[int] = Field(None, alias="BeaconInterval")
+    short_gi: Optional[int] = Field(None, alias="SGIEnabled")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class WifiAclPolicy(BaseModel):
+    """Per-AP MAC filter policy (OBJ_WLANACL_ID/Instance).
+
+    Eight rows total (one per AP). ``ACLPolicy`` is the modem's string:
+    ``Disabled`` (no filter), ``Allow`` (whitelist), ``Deny`` (blacklist).
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    alias: Optional[str] = Field(None, alias="Alias")
+    policy: Optional[str] = Field(None, alias="ACLPolicy")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class WifiAclRule(BaseModel):
+    """A single MAC ACL entry (OBJ_ACLCFG_ID/Instance).
+
+    No live rules were observed to lock the schema; the modem usually
+    exposes a MAC plus a parent-AP reference. ``extra='allow'`` keeps
+    any extra columns surfaced in the JSON output.
+    """
+
+    id: Optional[str] = Field(None, alias="_OBJ_InstID")
+    mac: Optional[str] = Field(None, alias="MACAddress")
+    ap_id: Optional[str] = Field(None, alias="ParentAclID")
+    model_config = {"populate_by_name": True, "extra": "allow"}
+
+
+class WifiSchedule(BaseModel):
+    """A Wi-Fi scheduling entry (OBJ_WLAN_WIFISCHEDULE/Instance).
+
+    One row per AP. The schedule is a recurring weekly window:
+    ``StartHour``:``StartMin`` -> ``EndHour``:``EndMin`` on the
+    days where ``Time_Day_M/T/We/Th/Fri/Sa/Su`` = 1.
+
+    ``Action`` is the modem's encoding of what to do during the
+    window (typically 0 = turn the SSID OFF inside the window).
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    enabled: Optional[int] = Field(None, alias="WLANWiFiScheduleEnable")
+    action: Optional[int] = Field(None, alias="Action")
+    start_hour: Optional[int] = Field(None, alias="StartHour")
+    start_min: Optional[int] = Field(None, alias="StartMin")
+    end_hour: Optional[int] = Field(None, alias="EndHour")
+    end_min: Optional[int] = Field(None, alias="EndMin")
+    day_mon: Optional[int] = Field(None, alias="Time_Day_M")
+    day_tue: Optional[int] = Field(None, alias="Time_Day_T")
+    day_wed: Optional[int] = Field(None, alias="Time_Day_We")
+    day_thu: Optional[int] = Field(None, alias="Time_Day_Th")
+    day_fri: Optional[int] = Field(None, alias="Time_Day_Fri")
+    day_sat: Optional[int] = Field(None, alias="Time_Day_Sa")
+    day_sun: Optional[int] = Field(None, alias="Time_Day_Su")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class EasyMeshState(BaseModel):
+    """EasyMesh master switch (OBJ_EASYMESHENABLE_ID, single)."""
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    enabled: Optional[int] = Field(None, alias="EasyMeshEnable")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class BandSteeringState(BaseModel):
+    """Band steering master switch (OBJ_BANDSTEERENABLE_ID, single)."""
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    enabled: Optional[int] = Field(None, alias="BandSteeringEnable")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
 class Dms(BaseModel):
     """DLNA / DMS media-server config (OBJ_DMS_ID, single instance).
 
