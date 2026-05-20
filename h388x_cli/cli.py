@@ -13,6 +13,7 @@ from rich.table import Table
 from .api import ZTEH388XAPI
 from .discovery import Spider
 from .models import (
+    AdminUser,
     ArpEntry,
     BandSteeringState,
     Client,
@@ -33,8 +34,10 @@ from .models import (
     FtpServer,
     FtpUser,
     MacTableEntry,
+    MobileWanInfo,
     NanoCdnStatus,
     PortForwardingRule,
+    PublicLan,
     RouterAdvertisement,
     TopologyAgent,
     TopologyController,
@@ -44,6 +47,7 @@ from .models import (
     VoipLine,
     VoipSipLine,
     WanConnection,
+    WebLoginTimeout,
     WifiAclPolicy,
     WifiAclRule,
     WifiAP,
@@ -1672,6 +1676,147 @@ def topology(
                     a.software_version or "-",
                 )
             console.print(agent_table)
+    finally:
+        api.logout()
+
+
+# --------------------------------------------------------------- admin-users
+
+@app.command("admin-users")
+def admin_users(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """List web admin accounts configured on the modem."""
+    api = get_api(host, user, password, insecure)
+    try:
+        users = [AdminUser.model_validate(r) for r in api.get_admin_users()]
+        if state.json:
+            _emit_json([u.model_dump() for u in users])
+            return
+        if not users:
+            console.print("[yellow]No admin users returned.[/yellow]")
+            return
+        table = Table(title="Web admin accounts")
+        table.add_column("ID", style="dim")
+        table.add_column("Username", style="cyan")
+        table.add_column("Right", style="magenta")
+        for u in users:
+            table.add_row(u.id or "-", u.username or "-", u.right or "-")
+        console.print(table)
+    finally:
+        api.logout()
+
+
+# ----------------------------------------------------------- web-login-timeout
+
+@app.command("web-timeout")
+def web_timeout(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show the web UI idle session timeout (minutes)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        row = api.get_web_login_timeout()
+        tm = WebLoginTimeout.model_validate(row) if row else None
+        if state.json:
+            _emit_json(tm.model_dump() if tm else {})
+            return
+        if not tm:
+            console.print("[yellow]No timeout data returned.[/yellow]")
+            return
+        table = Table(title="Web login timeout")
+        table.add_column("Field", style="cyan")
+        table.add_column("Value", style="magenta")
+        table.add_row("Instance", tm.id or "-")
+        table.add_row(
+            "Timeout (min)",
+            str(tm.timeout) if tm.timeout is not None else "-",
+        )
+        console.print(table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------ mobile-wan
+
+@app.command("mobile-wan")
+def mobile_wan(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show 3G/4G USB dongle backup status (if any)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        data = api.get_mobile_wan()
+        dongle = data.get("dongle", {}) or {}
+        info_raw = data.get("info", {}) or {}
+        info = MobileWanInfo.model_validate(info_raw) if info_raw else None
+
+        if state.json:
+            _emit_json({
+                "dongle": dongle,
+                "info": info.model_dump() if info else {},
+            })
+            return
+
+        table = Table(title="Mobile WAN dongle")
+        table.add_column("Field", style="cyan")
+        table.add_column("Value", style="magenta")
+        table.add_row("Dongle status", dongle.get("DongleStatus", "-"))
+        table.add_row("Dev type", dongle.get("DevType", "-"))
+        table.add_row("Dongle type", dongle.get("DongleType", "-"))
+        if info:
+            table.add_row("Operator", info.operator or "-")
+            table.add_row(
+                "Signal",
+                str(info.signal_strength) if info.signal_strength is not None else "-",
+            )
+            table.add_row("IMEI", info.imei or "-")
+            table.add_row("Network mode", info.network_mode or "-")
+            table.add_row(
+                "Alarm", str(info.alarm) if info.alarm is not None else "-"
+            )
+        console.print(table)
+    finally:
+        api.logout()
+
+
+# ----------------------------------------------------------------- public-lan
+
+@app.command("public-lan")
+def public_lan(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show secondary 'public LAN' interface status (hotspot/guest slot)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        row = api.get_public_lan()
+        pl = PublicLan.model_validate(row) if row else None
+        if state.json:
+            _emit_json(pl.model_dump() if pl else {})
+            return
+        if not pl:
+            console.print("[yellow]No public LAN data returned.[/yellow]")
+            return
+        table = Table(title="Public LAN")
+        table.add_column("Field", style="cyan")
+        table.add_column("Value", style="magenta")
+        table.add_row("Instance", pl.id or "-")
+        table.add_row("Enabled", pl.enabled or "-")
+        table.add_row("Public IP", pl.public_ip or "-")
+        table.add_row("Public mask", pl.public_mask or "-")
+        console.print(table)
     finally:
         api.logout()
 
