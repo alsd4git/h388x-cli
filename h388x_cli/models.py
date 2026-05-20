@@ -641,3 +641,64 @@ class WifiAP(BaseModel):
     wpa2_encrypt: Optional[str] = Field(None, alias="11iEncryptType")
 
     model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+# -------- Group F: system / admin -------------------------------------------
+
+class AdminUser(BaseModel):
+    """A web admin account (``OBJ_USERINFO_ID/Instance``).
+
+    The ZTE schema marks ``Password`` / ``NewPassword`` as write-only
+    (see ``<encode>`` hint), so the API never returns them. ``Right`` is
+    a numeric privilege flag — observed value ``1`` for the default
+    ``admin`` user.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    username: Optional[str] = Field(None, alias="Username")
+    right: Optional[str] = Field(None, alias="Right")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class WebLoginTimeout(BaseModel):
+    """Web UI idle session timeout (``OBJ_USERIF_ID``, single instance).
+
+    ``timeout`` is expressed in minutes; controls when the modem
+    invalidates an idle admin session.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    timeout: Optional[int] = Field(None, alias="Timeout")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class MobileWanInfo(BaseModel):
+    """Mobile dongle backup line (``OBJ_WWANMOBILEINFO_ID``).
+
+    Populated only when a 3G/4G USB dongle is plugged in. With no
+    dongle attached the fields stay empty and ``signal_strength`` is
+    ``0`` — pair this with the top-level ``DongleStatus`` scalar to
+    distinguish 'no dongle' from 'dongle but no signal'.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    operator: Optional[str] = Field(None, alias="MobileName")
+    signal_strength: Optional[int] = Field(None, alias="SignalStrength")
+    imei: Optional[str] = Field(None, alias="IMEI")
+    network_mode: Optional[str] = Field(None, alias="NetWorkMode")
+    alarm: Optional[int] = Field(None, alias="MobileAlarm")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+class PublicLan(BaseModel):
+    """Secondary 'public LAN' slot (``OBJ_PUBLICLAN_ID``, single row).
+
+    Optional hotspot/guest public IP interface; on a default TIM Hub+
+    install it stays disabled with zeroed IP/mask.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    enabled: Optional[str] = Field(None, alias="Enable")
+    public_ip: Optional[str] = Field(None, alias="PublicIP")
+    public_mask: Optional[str] = Field(None, alias="PublicMask")
+    model_config = {"populate_by_name": True, "extra": "ignore"}
