@@ -1709,6 +1709,68 @@ def _render_generic_rows(
     console.print(table)
 
 
+# --------------------------------------------------------------------- edns0
+
+@app.command("edns0")
+def edns0(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show EDNS0 (client-subnet) DNS extension toggle."""
+    api = get_api(host, user, password, insecure)
+    try:
+        row = api.get_edns0()
+        if state.json:
+            _emit_json(row)
+            return
+        if not row:
+            console.print("[yellow]No EDNS0 data returned.[/yellow]")
+            return
+        table = Table(title="EDNS0")
+        table.add_column("Field", style="cyan")
+        table.add_column("Value", style="magenta")
+        table.add_row("Instance", row.get("_InstID", "-"))
+        enable_raw = row.get("EDNS0Enable")
+        try:
+            enable_val = int(enable_raw) if enable_raw is not None else None
+        except (TypeError, ValueError):
+            enable_val = None
+        table.add_row("Enabled", _onoff(enable_val))
+        console.print(table)
+    finally:
+        api.logout()
+
+
+# --------------------------------------------------------------- ipv6-prefix
+
+@app.command("ipv6-prefix")
+def ipv6_prefix(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show IPv6 prefix pool (DHCPv6-PD) and static prefixes."""
+    api = get_api(host, user, password, insecure)
+    try:
+        data = api.get_ipv6_prefix()
+        if state.json:
+            _emit_json(data)
+            return
+        _render_generic_rows(
+            "IPv6 prefix pool (DHCPv6-PD)", data.get("pool", []),
+            "No delegated IPv6 prefix from the ISP.",
+        )
+        _render_generic_rows(
+            "IPv6 static prefixes", data.get("static", []),
+            "No static IPv6 prefix configured.",
+        )
+    finally:
+        api.logout()
+
+
 # ------------------------------------------------------------ firewall-ipfilter
 
 @app.command("firewall-ipfilter")
