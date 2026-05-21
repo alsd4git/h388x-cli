@@ -123,6 +123,18 @@ class ZTEH388XAPI:
     DSL_IF_VIEW_URL = "/?_type=menuView&_tag=dslWanStatus&Menu3Location=0"
     DSL_IF_URL = "/?_type=menuData&_tag=dsl_interface_status_lua.lua"
 
+    # --- Firewall extra rules (group H) ---------------------------------
+    # ``filterCriteria`` view (already declared above) arms both IP-filter
+    # rules and the URL-filter rule list, plus the IP-filter priority
+    # slot. ``parentCtrl`` is its own page. All four lists are empty by
+    # default on TIM Hub+ — they populate only when the user adds rules
+    # in the web UI.
+    FW_IPFILTER_URL = "/?_type=menuData&_tag=firewall_ipfilter_m.lua"
+    FW_IPFILTER_PRIORITY_URL = "/?_type=menuData&_tag=firewall_ipfilter_priority_lua.lua"
+    FW_URLFILTER_URL = "/?_type=menuData&_tag=firewall_urlfilter_m.lua"
+    PARENT_CTRL_VIEW_URL = "/?_type=menuView&_tag=parentCtrl&Menu3Location=0"
+    PARENT_CTRL_URL = "/?_type=menuData&_tag=firewall_parentctrl_lua.lua"
+
     # --- Wi-Fi advanced (group D: read-only) ----------------------------
     # wlanBasic is already used as WLAN_BASIC_VIEW_URL for the radios list;
     # the same parent view also arms the advanced radio config endpoint.
@@ -753,6 +765,52 @@ class ZTEH388XAPI:
         except ET.ParseError:
             pass
         return {"dongle": dongle, "info": info_rows[0] if info_rows else {}}
+
+    def get_firewall_ipfilter(
+        self, retry: bool = True,
+    ) -> Dict[str, List[Dict[str, str]]]:
+        """Return IP-filter rules + the priority slot.
+
+        Same parent view (``filterCriteria``) serves two endpoints:
+        - ``OBJ_FWIP_ID`` — the user-defined IP-filter rules (empty
+          on a stock install);
+        - ``OBJ_FWIP_PRIORITY_ID`` — a single ``FilterIndex`` that
+          selects which rule wins on conflict.
+        Returned shape: ``{"rules": [...], "priority": [...]}``.
+        """
+        rules = self._menudata(
+            self.FILTER_CRITERIA_VIEW_URL, self.FW_IPFILTER_URL,
+            "OBJ_FWIP_ID", retry,
+        )
+        priority = self._menudata(
+            self.FILTER_CRITERIA_VIEW_URL, self.FW_IPFILTER_PRIORITY_URL,
+            "OBJ_FWIP_PRIORITY_ID", retry,
+        )
+        return {"rules": rules, "priority": priority}
+
+    def get_firewall_urlfilter(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return URL-filter rules (OBJ_FWURL_ID).
+
+        The master enable/target switch is already in ``get_firewall_*``
+        (URL filter global). This endpoint exposes the per-URL rule
+        list, empty on a stock TIM Hub+.
+        """
+        return self._menudata(
+            self.FILTER_CRITERIA_VIEW_URL, self.FW_URLFILTER_URL,
+            "OBJ_FWURL_ID", retry,
+        )
+
+    def get_parental_control(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return parental-control entries (OBJ_PARENT_CONTROL_ID).
+
+        Empty by default. The web UI lets you bind MACs to time
+        schedules; until that's done the modem returns the empty
+        wrapper element.
+        """
+        return self._menudata(
+            self.PARENT_CTRL_VIEW_URL, self.PARENT_CTRL_URL,
+            "OBJ_PARENT_CONTROL_ID", retry,
+        )
 
     def get_dsl_interface(self, retry: bool = True) -> Dict[str, str]:
         """Return raw DSL physical line stats (OBJ_DSLINTERFACE_ID, single).

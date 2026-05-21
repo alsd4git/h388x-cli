@@ -1681,6 +1681,110 @@ def topology(
         api.logout()
 
 
+def _render_generic_rows(
+    title: str, rows: List[Dict[str, str]], empty_msg: str
+) -> None:
+    """Render a list of XML instances when the schema isn't known.
+
+    Used for endpoints that are empty on stock TIM Hub+ (firewall
+    rules, parental control). When rules eventually exist, the table
+    auto-derives columns from the union of keys preserving order of
+    first appearance.
+    """
+    if not rows:
+        console.print(f"[dim]{empty_msg}[/dim]")
+        return
+    cols: List[str] = []
+    seen = set()
+    for r in rows:
+        for k in r.keys():
+            if k not in seen:
+                seen.add(k)
+                cols.append(k)
+    table = Table(title=title)
+    for c in cols:
+        table.add_column(c, style="cyan" if c.lower().endswith("id") else "white")
+    for r in rows:
+        table.add_row(*[str(r.get(c, "")) for c in cols])
+    console.print(table)
+
+
+# ------------------------------------------------------------ firewall-ipfilter
+
+@app.command("firewall-ipfilter")
+def firewall_ipfilter(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show user-defined IP-filter rules + priority slot."""
+    api = get_api(host, user, password, insecure)
+    try:
+        data = api.get_firewall_ipfilter()
+        if state.json:
+            _emit_json(data)
+            return
+        _render_generic_rows(
+            "IP filter rules", data.get("rules", []),
+            "No IP-filter rules configured.",
+        )
+        _render_generic_rows(
+            "IP filter priority", data.get("priority", []),
+            "No IP-filter priority entry.",
+        )
+    finally:
+        api.logout()
+
+
+# ----------------------------------------------------------- firewall-urlfilter
+
+@app.command("firewall-urlfilter")
+def firewall_urlfilter(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show per-URL filter rules (master toggle is in ``firewall``)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        rows = api.get_firewall_urlfilter()
+        if state.json:
+            _emit_json(rows)
+            return
+        _render_generic_rows(
+            "URL filter rules", rows,
+            "No URL-filter rules configured.",
+        )
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------- parental-control
+
+@app.command("parental-control")
+def parental_control(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show parental-control entries (MAC + time schedule bindings)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        rows = api.get_parental_control()
+        if state.json:
+            _emit_json(rows)
+            return
+        _render_generic_rows(
+            "Parental control entries", rows,
+            "No parental-control entries configured.",
+        )
+    finally:
+        api.logout()
+
+
 # --------------------------------------------------------------- dsl-interface
 
 @app.command("dsl-interface")
