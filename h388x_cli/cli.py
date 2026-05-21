@@ -27,6 +27,7 @@ from .models import (
     Dmz,
     DnsHostname,
     DnsLocal,
+    DslInterface,
     EasyMeshState,
     EthInterface,
     FirewallDos,
@@ -1676,6 +1677,82 @@ def topology(
                     a.software_version or "-",
                 )
             console.print(agent_table)
+    finally:
+        api.logout()
+
+
+# --------------------------------------------------------------- dsl-interface
+
+@app.command("dsl-interface")
+def dsl_interface(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show full DSL PHY status (rates, SNR margin, attenuation, errors)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        row = api.get_dsl_interface()
+        dsl = DslInterface.model_validate(row) if row else None
+        if state.json:
+            _emit_json(dsl.model_dump() if dsl else {})
+            return
+        if not dsl:
+            console.print("[yellow]No DSL interface data returned.[/yellow]")
+            return
+
+        meta = Table(title="DSL interface")
+        meta.add_column("Field", style="cyan")
+        meta.add_column("Value", style="magenta")
+        meta.add_row("Instance", dsl.id or "-")
+        meta.add_row("Enabled", _onoff(dsl.enabled))
+        meta.add_row("Status", dsl.status or "-")
+        meta.add_row("Module", dsl.module_type or "-")
+        meta.add_row("Profile", dsl.profile or "-")
+        meta.add_row("Data path", dsl.data_path or "-")
+        meta.add_row("Encapsulation", dsl.encapsulation or "-")
+        meta.add_row("Showtime start", dsl.showtime_start or "-")
+        meta.add_row(
+            "Link retrains",
+            str(dsl.link_retrain) if dsl.link_retrain is not None else "-",
+        )
+        console.print(meta)
+
+        rates = Table(title="DSL rates / line quality")
+        rates.add_column("Metric", style="cyan")
+        rates.add_column("Downstream", style="green")
+        rates.add_column("Upstream", style="yellow")
+
+        def s(v):
+            return str(v) if v is not None else "-"
+
+        rates.add_row("Current rate (kbps)",
+                      s(dsl.downstream_current_rate), s(dsl.upstream_current_rate))
+        rates.add_row("Max rate (kbps)",
+                      s(dsl.downstream_max_rate), s(dsl.upstream_max_rate))
+        rates.add_row("Noise margin (× 0.1 dB)",
+                      s(dsl.downstream_noise_margin), s(dsl.upstream_noise_margin))
+        rates.add_row("Attenuation (× 0.1 dB)",
+                      s(dsl.downstream_attenuation), s(dsl.upstream_attenuation))
+        rates.add_row("Power (× 0.1 dBm)",
+                      s(dsl.downstream_power), s(dsl.upstream_power))
+        rates.add_row("INP",
+                      s(dsl.downstream_inp), s(dsl.upstream_inp))
+        rates.add_row("Interleave delay (ms)",
+                      s(dsl.downstream_interleave_delay), s(dsl.upstream_interleave_delay))
+        rates.add_row("Interleave depth",
+                      s(dsl.downstream_interleave_depth), s(dsl.upstream_interleave_depth))
+        rates.add_row("CRC errors",
+                      s(dsl.downstream_crc_errors), s(dsl.upstream_crc_errors))
+        console.print(rates)
+
+        errs = Table(title="DSL FEC errors")
+        errs.add_column("Counter", style="cyan")
+        errs.add_column("Value", style="magenta")
+        errs.add_row("FEC errors (CPE)", s(dsl.fec_errors))
+        errs.add_row("FEC errors (ATU-C)", s(dsl.atuc_fec_errors))
+        console.print(errs)
     finally:
         api.logout()
 
