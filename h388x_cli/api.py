@@ -123,6 +123,13 @@ class ZTEH388XAPI:
     DSL_IF_VIEW_URL = "/?_type=menuView&_tag=dslWanStatus&Menu3Location=0"
     DSL_IF_URL = "/?_type=menuData&_tag=dsl_interface_status_lua.lua"
 
+    # --- IPv6 prefix + EDNS0 (group J) ----------------------------------
+    EDNS0_VIEW_URL = "/?_type=menuView&_tag=smEdns0&Menu3Location=0"
+    EDNS0_URL = "/?_type=menuData&_tag=edns0_lua.lua"
+    IPV6_PREFIX_VIEW_URL = "/?_type=menuView&_tag=lanMgrIpv6&Menu3Location=0"
+    IPV6_PREFIX_POOL_URL = "/?_type=menuData&_tag=prefix_prefixpool_lua.lua"
+    IPV6_STATIC_PREFIX_URL = "/?_type=menuData&_tag=prefix_staticprefix_lua.lua"
+
     # --- Firewall extra rules (group H) ---------------------------------
     # ``filterCriteria`` view (already declared above) arms both IP-filter
     # rules and the URL-filter rule list, plus the IP-filter priority
@@ -811,6 +818,39 @@ class ZTEH388XAPI:
             self.PARENT_CTRL_VIEW_URL, self.PARENT_CTRL_URL,
             "OBJ_PARENT_CONTROL_ID", retry,
         )
+
+    def get_edns0(self, retry: bool = True) -> Dict[str, str]:
+        """Return EDNS0 toggle state (OBJ_EDNS0_ID, single row).
+
+        EDNS0 = DNS client subnet extension. The instance carries a
+        single boolean ``EDNS0Enable`` (default ``0``).
+        """
+        rows = self._menudata(
+            self.EDNS0_VIEW_URL, self.EDNS0_URL,
+            "OBJ_EDNS0_ID", retry,
+        )
+        return rows[0] if rows else {}
+
+    def get_ipv6_prefix(
+        self, retry: bool = True,
+    ) -> Dict[str, List[Dict[str, str]]]:
+        """Return IPv6 prefix delegation + static prefix entries.
+
+        Both come from the same ``lanMgrIpv6`` parent view:
+        - ``OBJ_PREFIXPOOL_ID`` — DHCPv6-PD prefixes received from the
+          ISP (empty on stock TIM Hub+ until WAN6 negotiates a PD);
+        - ``OBJ_STATIC_PREFIX_ID`` — manually configured static prefixes.
+        Returned shape: ``{"pool": [...], "static": [...]}``.
+        """
+        pool = self._menudata(
+            self.IPV6_PREFIX_VIEW_URL, self.IPV6_PREFIX_POOL_URL,
+            "OBJ_PREFIXPOOL_ID", retry,
+        )
+        static = self._menudata(
+            self.IPV6_PREFIX_VIEW_URL, self.IPV6_STATIC_PREFIX_URL,
+            "OBJ_STATIC_PREFIX_ID", retry,
+        )
+        return {"pool": pool, "static": static}
 
     def get_dsl_interface(self, retry: bool = True) -> Dict[str, str]:
         """Return raw DSL physical line stats (OBJ_DSLINTERFACE_ID, single).
