@@ -119,6 +119,10 @@ class ZTEH388XAPI:
     PUBLIC_LAN_VIEW_URL = "/?_type=menuView&_tag=localNetStatus&Menu3Location=0"
     PUBLIC_LAN_URL = "/?_type=menuData&_tag=publiclan_status_lua.lua"
 
+    # --- DSL physical line status (group G) -----------------------------
+    DSL_IF_VIEW_URL = "/?_type=menuView&_tag=dslWanStatus&Menu3Location=0"
+    DSL_IF_URL = "/?_type=menuData&_tag=dsl_interface_status_lua.lua"
+
     # --- Wi-Fi advanced (group D: read-only) ----------------------------
     # wlanBasic is already used as WLAN_BASIC_VIEW_URL for the radios list;
     # the same parent view also arms the advanced radio config endpoint.
@@ -749,6 +753,21 @@ class ZTEH388XAPI:
         except ET.ParseError:
             pass
         return {"dongle": dongle, "info": info_rows[0] if info_rows else {}}
+
+    def get_dsl_interface(self, retry: bool = True) -> Dict[str, str]:
+        """Return raw DSL physical line stats (OBJ_DSLINTERFACE_ID, single).
+
+        Different from ``get_dsl_stats()`` (which is the home-page
+        summary): this is the full PHY view used by the DSL status
+        page — current/max rates, SNR margin, attenuation, TX/RX
+        power, FEC/CRC errors, profile, INP and interleave depth,
+        plus link encapsulation and Showtime start time.
+        """
+        rows = self._menudata(
+            self.DSL_IF_VIEW_URL, self.DSL_IF_URL,
+            "OBJ_DSLINTERFACE_ID", retry,
+        )
+        return rows[0] if rows else {}
 
     def get_public_lan(self, retry: bool = True) -> Dict[str, str]:
         """Return the secondary 'public LAN' interface (OBJ_PUBLICLAN_ID).

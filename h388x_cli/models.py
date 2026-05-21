@@ -702,3 +702,58 @@ class PublicLan(BaseModel):
     public_ip: Optional[str] = Field(None, alias="PublicIP")
     public_mask: Optional[str] = Field(None, alias="PublicMask")
     model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+# -------- Group G: DSL physical line ---------------------------------------
+
+class DslInterface(BaseModel):
+    """Full DSL PHY view (``OBJ_DSLINTERFACE_ID/Instance``).
+
+    Granular line stats from `dsl_interface_status_lua.lua`:
+    current vs. max sync rates per direction, SNR margin (dB,
+    integer × 10 in some firmwares — check live values), TX/RX
+    output power (× 10 dBm), interleave depth, INP, attenuation
+    (× 10 dB), CRC/FEC error counters, line profile, encapsulation
+    and Showtime start time. Use this for diagnostics; the home
+    page summary is in ``stats``.
+
+    Units come straight from the modem; conversion to dB/Mbps is
+    left to the consumer because the firmware mixes scaling factors
+    across fields. ``extra='allow'`` keeps any future field visible
+    in the JSON dump.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    enabled: Optional[int] = Field(None, alias="Enable")
+    status: Optional[str] = Field(None, alias="Status")
+    module_type: Optional[str] = Field(None, alias="Module_type")
+    profile: Optional[str] = Field(None, alias="CurrentProfile")
+    data_path: Optional[str] = Field(None, alias="Data_path")
+    encapsulation: Optional[str] = Field(None, alias="tLinkEncapsulationUsed")
+    showtime_start: Optional[str] = Field(None, alias="Showtime_start")
+
+    upstream_current_rate: Optional[int] = Field(None, alias="Upstream_current_rate")
+    upstream_max_rate: Optional[int] = Field(None, alias="Upstream_max_rate")
+    upstream_noise_margin: Optional[int] = Field(None, alias="Upstream_noise_margin")
+    upstream_power: Optional[int] = Field(None, alias="Upstream_power")
+    upstream_attenuation: Optional[int] = Field(None, alias="Upstream_attenuation")
+    upstream_inp: Optional[int] = Field(None, alias="UpstreamInp")
+    upstream_interleave_delay: Optional[int] = Field(None, alias="UpInterleaveDelay")
+    upstream_interleave_depth: Optional[int] = Field(None, alias="UpInterleaveDepth")
+    upstream_crc_errors: Optional[int] = Field(None, alias="UpCrc_errors")
+
+    downstream_current_rate: Optional[int] = Field(None, alias="Downstream_current_rate")
+    downstream_max_rate: Optional[int] = Field(None, alias="Downstream_max_rate")
+    downstream_noise_margin: Optional[int] = Field(None, alias="Downstream_noise_margin")
+    downstream_power: Optional[int] = Field(None, alias="Downstream_power")
+    downstream_attenuation: Optional[int] = Field(None, alias="Downstream_attenuation")
+    downstream_inp: Optional[int] = Field(None, alias="DownstreamInp")
+    downstream_interleave_delay: Optional[int] = Field(None, alias="DownInterleaveDelay")
+    downstream_interleave_depth: Optional[int] = Field(None, alias="DownInterleavedepth")
+    downstream_crc_errors: Optional[int] = Field(None, alias="DownCrc_errors")
+
+    link_retrain: Optional[int] = Field(None, alias="Link_retrain")
+    fec_errors: Optional[int] = Field(None, alias="Fec_errors")
+    atuc_fec_errors: Optional[int] = Field(None, alias="Atuc_fec_errors")
+
+    model_config = {"populate_by_name": True, "extra": "allow"}
