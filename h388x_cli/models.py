@@ -786,3 +786,30 @@ class WifiSsidConfig(BaseModel):
     wpa2_encrypt: Optional[str] = Field(None, alias="11iEncryptType")
 
     model_config = {"populate_by_name": True, "extra": "ignore"}
+
+
+# -------- SNTP / time config (hidden endpoint) -----------------------------
+
+class SntpConfig(BaseModel):
+    """SNTP / time config row (``OBJ_SNTP_ID/Instance``, ``sntp_data``).
+
+    Up to five NTP servers and the modem's current local time, plus
+    timezone selection (``zone_index`` is a ZTE internal enum — 14 =
+    Europe/Rome on TIM Hub+), automatic timezone hint, DST flag,
+    poll interval (seconds) and the DSCP marking for NTP traffic
+    (``-1`` = unset).
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    current_local_time: Optional[str] = Field(None, alias="CurrentLocalTime")
+    ntp_server_1: Optional[str] = Field(None, alias="NtpServer1")
+    ntp_server_2: Optional[str] = Field(None, alias="NtpServer2")
+    ntp_server_3: Optional[str] = Field(None, alias="NtpServer3")
+    ntp_server_4: Optional[str] = Field(None, alias="NtpServer4")
+    ntp_server_5: Optional[str] = Field(None, alias="NtpServer5")
+    zone_index: Optional[int] = Field(None, alias="ZoneIndex")
+    auto_set_tzname: Optional[int] = Field(None, alias="AutoSetTzname")
+    daylight_savings_used: Optional[int] = Field(None, alias="DaylightSavingsUsed")
+    poll_time_interval: Optional[int] = Field(None, alias="PollTimeInterval")
+    dscp: Optional[int] = Field(None, alias="Dscp")
+    model_config = {"populate_by_name": True, "extra": "ignore"}

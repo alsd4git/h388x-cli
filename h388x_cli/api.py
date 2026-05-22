@@ -129,6 +129,11 @@ class ZTEH388XAPI:
     VOIP_POS_VIEW_URL = "/?_type=menuView&_tag=posOnoff&Menu3Location=0"
     VOIP_POS_URL = "/?_type=menuData&_tag=voip_posonoff_lua.lua"
 
+    # --- SNTP / time (hidden endpoint, read-only) -----------------------
+    # ``hiddenData`` endpoints don't need a menuView arming step. The
+    # SNTP page is reachable directly with a plain authenticated GET.
+    SNTP_URL = "/?_type=hiddenData&_tag=sntp_data"
+
     # --- USB devices (group N) ------------------------------------------
     # USB list shares the LAN status parent view (``localNetStatus``).
     USB_DEVS_URL = "/?_type=menuData&_tag=usb_usbdevs_lua.lua"
@@ -834,6 +839,39 @@ class ZTEH388XAPI:
             self.PARENT_CTRL_VIEW_URL, self.PARENT_CTRL_URL,
             "OBJ_PARENT_CONTROL_ID", retry,
         )
+
+    def _hiddendata(
+        self, data_url: str, root_element: str, retry: bool = True,
+    ) -> List[Dict[str, str]]:
+        """Fetch a ``_type=hiddenData`` endpoint (no view-arming).
+
+        These endpoints sit outside the menuView/menuData dance and
+        respond to a plain authenticated GET. Session timeout
+        handling is the same — re-login once then retry.
+        """
+        try:
+            resp = self.session.get(
+                f"{self.base_url}{data_url}", headers=self.NO_CACHE, timeout=8
+            )
+            if self._is_session_expired(resp.text):
+                if retry and self.login():
+                    return self._hiddendata(data_url, root_element, retry=False)
+                return []
+            return self._parse_instances(resp.text, root_element)
+        except requests.RequestException:
+            return []
+
+    def get_sntp(self, retry: bool = True) -> Dict[str, str]:
+        """Return SNTP/time config (OBJ_SNTP_ID, single row).
+
+        Hidden endpoint, no view arming. Fields include up to 5 NTP
+        servers, the modem's current local time, poll interval
+        (seconds), a numeric ``ZoneIndex`` (14 = Europe/Rome on
+        TIM Hub+), ``AutoSetTzname`` and ``DaylightSavingsUsed``
+        flags, plus a DSCP marking.
+        """
+        rows = self._hiddendata(self.SNTP_URL, "OBJ_SNTP_ID", retry)
+        return rows[0] if rows else {}
 
     def get_voip_media(
         self, retry: bool = True,
