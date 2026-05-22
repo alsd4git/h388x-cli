@@ -21,3 +21,13 @@ h388x = "h388x_cli.cli:app"
 
 [tool.setuptools]
 packages = ["h388x_cli"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.3",
+    "responses>=0.26.1",
+]
