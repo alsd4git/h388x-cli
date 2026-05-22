@@ -40,6 +40,7 @@ from .models import (
     PortForwardingRule,
     PublicLan,
     RouterAdvertisement,
+    SntpConfig,
     TopologyAgent,
     TopologyController,
     UpnpConfig,
@@ -1885,6 +1886,63 @@ def wifi_ssid_config(
                 " / ".join(sec_parts) if sec_parts else "-",
             )
         console.print(table)
+    finally:
+        api.logout()
+
+
+# ----------------------------------------------------------------------- sntp
+
+@app.command("sntp")
+def sntp(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show SNTP / time config (NTP servers, timezone, current time)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        row = api.get_sntp()
+        cfg = SntpConfig.model_validate(row) if row else None
+        if state.json:
+            _emit_json(cfg.model_dump() if cfg else {})
+            return
+        if not cfg:
+            console.print("[yellow]No SNTP data returned.[/yellow]")
+            return
+        table = Table(title="SNTP / time")
+        table.add_column("Field", style="cyan")
+        table.add_column("Value", style="magenta")
+        table.add_row("Current local time", cfg.current_local_time or "-")
+        table.add_row(
+            "Zone index",
+            str(cfg.zone_index) if cfg.zone_index is not None else "-",
+        )
+        table.add_row("Auto timezone", _onoff(cfg.auto_set_tzname))
+        table.add_row("Daylight saving", _onoff(cfg.daylight_savings_used))
+        table.add_row(
+            "Poll interval (s)",
+            str(cfg.poll_time_interval) if cfg.poll_time_interval is not None else "-",
+        )
+        table.add_row(
+            "DSCP",
+            str(cfg.dscp) if cfg.dscp is not None else "-",
+        )
+        console.print(table)
+
+        srv_table = Table(title="NTP servers")
+        srv_table.add_column("#", style="cyan")
+        srv_table.add_column("Hostname", style="white")
+        servers = [
+            ("1", cfg.ntp_server_1),
+            ("2", cfg.ntp_server_2),
+            ("3", cfg.ntp_server_3),
+            ("4", cfg.ntp_server_4),
+            ("5", cfg.ntp_server_5),
+        ]
+        for n, h in servers:
+            srv_table.add_row(n, h or "-")
+        console.print(srv_table)
     finally:
         api.logout()
 
