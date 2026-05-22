@@ -757,3 +757,32 @@ class DslInterface(BaseModel):
     atuc_fec_errors: Optional[int] = Field(None, alias="Atuc_fec_errors")
 
     model_config = {"populate_by_name": True, "extra": "allow"}
+
+
+# -------- Group L: Wi-Fi SSID full config ----------------------------------
+
+class WifiSsidConfig(BaseModel):
+    """Full SSID config row (``OBJ_WLANAP_ID/Instance``, ``wlan_sssidconf``).
+
+    Same OBJ root as :class:`WifiAP` but a different ZTE view: this
+    one is the **configuration** page (used by the web UI to edit
+    SSID parameters), and it exposes two extra fields not present
+    in the status view: ``hidden`` (broadcast suppression) and
+    ``max_users``. Use ``wifi`` for monitoring; use this for an
+    editor-friendly snapshot.
+    """
+
+    id: Optional[str] = Field(None, alias="_InstID")
+    enabled: Optional[int] = Field(None, alias="Enable")
+    radio_id: Optional[str] = Field(None, alias="WLANViewName")
+    alias: Optional[str] = Field(None, alias="Alias")
+    essid: Optional[str] = Field(None, alias="ESSID")
+    hidden: Optional[int] = Field(None, alias="ESSIDHideEnable")
+    max_users: Optional[int] = Field(None, alias="MaxUserNum")
+    beacon_type: Optional[str] = Field(None, alias="BeaconType")
+    wpa_auth_mode: Optional[str] = Field(None, alias="WPAAuthMode")
+    wpa_encrypt: Optional[str] = Field(None, alias="WPAEncryptType")
+    wpa2_auth_mode: Optional[str] = Field(None, alias="11iAuthMode")
+    wpa2_encrypt: Optional[str] = Field(None, alias="11iEncryptType")
+
+    model_config = {"populate_by_name": True, "extra": "ignore"}
