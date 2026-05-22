@@ -55,6 +55,7 @@ from .models import (
     WifiRadio,
     WifiRadioAdvanced,
     WifiSchedule,
+    WifiSsidConfig,
 )
 
 load_dotenv()
@@ -1707,6 +1708,185 @@ def _render_generic_rows(
     for r in rows:
         table.add_row(*[str(r.get(c, "")) for c in cols])
     console.print(table)
+
+
+_RTP_PT_NAME = {
+    "0": "G.711µ (PCMU)",
+    "8": "G.711a (PCMA)",
+    "9": "G.722",
+    "18": "G.729",
+}
+
+
+# ---------------------------------------------------------------- voip-media
+
+@app.command("voip-media")
+def voip_media(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show SIP codec preferences per line (3 codecs × 2 VL lines)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        data = api.get_voip_media()
+        codecs = data.get("OBJ_VOIPLINEVMEDAI_ID", [])
+        if state.json:
+            _emit_json({
+                "lines": data.get("OBJ_VOIPVPLINE_ID", []),
+                "codecs": codecs,
+            })
+            return
+        if not codecs:
+            console.print("[yellow]No VoIP media data returned.[/yellow]")
+            return
+        table = Table(title="VoIP SIP media codecs")
+        table.add_column("Line", style="cyan")
+        table.add_column("Slot", style="dim")
+        table.add_column("Priority", style="magenta")
+        table.add_column("Enabled", style="green")
+        table.add_column("RTP PT", style="white")
+        table.add_column("Codec", style="white")
+        table.add_column("Clock", style="dim")
+        table.add_column("Ptime", style="dim")
+        for c in codecs:
+            inst = c.get("_InstID", "")
+            # Format: IGD.SV.VS1.VP1.VL{n}.LC.CL{m}
+            line = "-"
+            slot = "-"
+            parts = inst.split(".")
+            for p in parts:
+                if p.startswith("VL"):
+                    line = p
+                elif p.startswith("CL"):
+                    slot = p
+            pt = c.get("MediaVPV", "")
+            pt_name = _RTP_PT_NAME.get(pt, f"PT {pt}" if pt else "-")
+            try:
+                enabled = int(c.get("MediaVEnable", "0"))
+            except (TypeError, ValueError):
+                enabled = None
+            table.add_row(
+                line, slot,
+                c.get("MediaVPri", "-"),
+                _onoff(enabled),
+                pt or "-",
+                pt_name,
+                c.get("MediaVCR", "-"),
+                c.get("MediaVPT", "-"),
+            )
+        console.print(table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------ voip-pos
+
+@app.command("voip-pos")
+def voip_pos(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show VoIP POS (port-on-off) toggles per VoIP slot."""
+    api = get_api(host, user, password, insecure)
+    try:
+        rows = api.get_voip_pos()
+        if state.json:
+            _emit_json(rows)
+            return
+        if not rows:
+            console.print("[yellow]No VoIP POS data returned.[/yellow]")
+            return
+        table = Table(title="VoIP POS toggles")
+        table.add_column("Slot", style="cyan")
+        table.add_column("Enabled", style="magenta")
+        for r in rows:
+            try:
+                enabled = int(r.get("VoipPosEnable", "0"))
+            except (TypeError, ValueError):
+                enabled = None
+            table.add_row(r.get("_InstID", "-"), _onoff(enabled))
+        console.print(table)
+    finally:
+        api.logout()
+
+
+# ------------------------------------------------------------------- usb-devs
+
+@app.command("usb-devs")
+def usb_devs(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show attached USB storage devices (empty when no stick plugged)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        rows = api.get_usb_devs()
+        if state.json:
+            _emit_json(rows)
+            return
+        _render_generic_rows(
+            "USB storage devices", rows,
+            "No USB storage device attached.",
+        )
+    finally:
+        api.logout()
+
+
+# ----------------------------------------------------------- wifi-ssid-config
+
+@app.command("wifi-ssid-config")
+def wifi_ssid_config(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Show full SSID configuration (hidden flag, max users, security)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        ssids = [WifiSsidConfig.model_validate(r) for r in api.get_wifi_ssid_config()]
+        if state.json:
+            _emit_json([s.model_dump() for s in ssids])
+            return
+        if not ssids:
+            console.print("[yellow]No SSID config returned.[/yellow]")
+            return
+        table = Table(title="Wi-Fi SSID configuration")
+        table.add_column("Alias", style="cyan")
+        table.add_column("Radio", style="dim")
+        table.add_column("ESSID", style="white")
+        table.add_column("On", style="green")
+        table.add_column("Hidden", style="yellow")
+        table.add_column("Max users", style="magenta")
+        table.add_column("Security", style="white")
+        for s in ssids:
+            sec_parts = []
+            if s.beacon_type:
+                sec_parts.append(s.beacon_type)
+            auth = s.wpa2_auth_mode or s.wpa_auth_mode
+            enc = s.wpa2_encrypt or s.wpa_encrypt
+            if auth:
+                sec_parts.append(auth)
+            if enc:
+                sec_parts.append(enc)
+            table.add_row(
+                s.alias or "-",
+                s.radio_id or "-",
+                s.essid or "-",
+                _onoff(s.enabled),
+                _onoff(s.hidden),
+                str(s.max_users) if s.max_users is not None else "-",
+                " / ".join(sec_parts) if sec_parts else "-",
+            )
+        console.print(table)
+    finally:
+        api.logout()
 
 
 # --------------------------------------------------------------------- edns0

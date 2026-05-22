@@ -123,6 +123,22 @@ class ZTEH388XAPI:
     DSL_IF_VIEW_URL = "/?_type=menuView&_tag=dslWanStatus&Menu3Location=0"
     DSL_IF_URL = "/?_type=menuData&_tag=dsl_interface_status_lua.lua"
 
+    # --- VoIP extra (group M) -------------------------------------------
+    SIP_MEDIA_VIEW_URL = "/?_type=menuView&_tag=sipMedia&Menu3Location=0"
+    SIP_MEDIA_URL = "/?_type=menuData&_tag=voip_sipmedia_lua.lua"
+    VOIP_POS_VIEW_URL = "/?_type=menuView&_tag=posOnoff&Menu3Location=0"
+    VOIP_POS_URL = "/?_type=menuData&_tag=voip_posonoff_lua.lua"
+
+    # --- USB devices (group N) ------------------------------------------
+    # USB list shares the LAN status parent view (``localNetStatus``).
+    USB_DEVS_URL = "/?_type=menuData&_tag=usb_usbdevs_lua.lua"
+
+    # --- Wi-Fi SSID full config (group L) -------------------------------
+    # Same OBJ root as the SSID status view (``wlan_status_lua.lua``),
+    # but the ``wlanBasic`` parent view exposes the configuration page
+    # which adds ``ESSIDHideEnable`` and ``MaxUserNum``.
+    WLAN_SSID_CONF_URL = "/?_type=menuData&_tag=wlan_sssidconf_lua.lua"
+
     # --- IPv6 prefix + EDNS0 (group J) ----------------------------------
     EDNS0_VIEW_URL = "/?_type=menuView&_tag=smEdns0&Menu3Location=0"
     EDNS0_URL = "/?_type=menuData&_tag=edns0_lua.lua"
@@ -817,6 +833,60 @@ class ZTEH388XAPI:
         return self._menudata(
             self.PARENT_CTRL_VIEW_URL, self.PARENT_CTRL_URL,
             "OBJ_PARENT_CONTROL_ID", retry,
+        )
+
+    def get_voip_media(
+        self, retry: bool = True,
+    ) -> Dict[str, List[Dict[str, str]]]:
+        """Return SIP media codec preferences per line.
+
+        The payload carries two roots: ``OBJ_VOIPVPLINE_ID`` (line
+        stubs) and ``OBJ_VOIPLINEVMEDAI_ID`` (3 codec rows per line —
+        per-line priority list). The codec row ``_InstID`` encodes
+        the parent line, e.g. ``IGD.SV.VS1.VP1.VL1.LC.CL1``. Use
+        ``MediaVPV`` for the RTP payload type (8=PCMA, 9=G.722,
+        18=G.729) and ``MediaVPri`` for the negotiation priority.
+        """
+        return self._menudata_multi(
+            self.SIP_MEDIA_VIEW_URL, self.SIP_MEDIA_URL,
+            ["OBJ_VOIPVPLINE_ID", "OBJ_VOIPLINEVMEDAI_ID"],
+            retry,
+        )
+
+    def get_voip_pos(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return VoIP POS (port-on-off) toggles per VoIP slot.
+
+        Two instances (one per VoIP line slot). ``VoipPosEnable=0``
+        means the POS feature is off — typical state on a stock
+        TIM Hub+.
+        """
+        return self._menudata(
+            self.VOIP_POS_VIEW_URL, self.VOIP_POS_URL,
+            "OBJ_VOIPPOSENABLE_ID", retry,
+        )
+
+    def get_usb_devs(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return attached USB storage devices (OBJ_USBSTORAGE_ID).
+
+        Empty when no USB stick is plugged in. The parent view is
+        ``localNetStatus`` (shared with LAN clients and public LAN).
+        """
+        return self._menudata(
+            self.LOCALNET_VIEW_URL, self.USB_DEVS_URL,
+            "OBJ_USBSTORAGE_ID", retry,
+        )
+
+    def get_wifi_ssid_config(self, retry: bool = True) -> List[Dict[str, str]]:
+        """Return the full SSID config rows (OBJ_WLANAP_ID, ``wlan_sssidconf``).
+
+        Same root as ``get_wifi_aps()`` (status view) but parsed from
+        the ``wlanBasic`` parent so the response includes
+        ``ESSIDHideEnable`` (hidden SSID toggle) and ``MaxUserNum``
+        (per-SSID client cap) on top of the usual security fields.
+        """
+        return self._menudata(
+            self.WLAN_BASIC_VIEW_URL, self.WLAN_SSID_CONF_URL,
+            "OBJ_WLANAP_ID", retry,
         )
 
     def get_edns0(self, retry: bool = True) -> Dict[str, str]:
