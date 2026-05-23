@@ -1,9 +1,24 @@
 import hashlib
+import json as _json
+import os
 import re
 import xml.etree.ElementTree as ET
+from pathlib import Path
 from typing import Optional, Dict, Any, List
 
 import requests
+
+
+def _default_cache_dir() -> Path:
+    """Return the per-user cache directory for h388x-cli.
+
+    Respects ``XDG_CACHE_HOME`` on Linux/macOS, falls back to
+    ``~/.cache/h388x-cli``. The directory is created lazily by the
+    caller on first write.
+    """
+    xdg = os.environ.get("XDG_CACHE_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".cache"
+    return base / "h388x-cli"
 
 
 class ZTEH388XAPI:
@@ -183,6 +198,8 @@ class ZTEH388XAPI:
         username: str = "admin",
         password: str = "",
         verify_tls: bool = True,
+        cache_enabled: bool = True,
+        cache_dir: Optional[Path] = None,
     ):
         """
         ``host`` can be a bare IP/hostname (``192.168.1.1``,
@@ -191,6 +208,12 @@ class ZTEH388XAPI:
         When the scheme is omitted, ``http://`` is assumed; any trailing
         slash is stripped so ``base_url`` is safe to concatenate with
         absolute paths.
+
+        When ``cache_enabled`` is true (default) a previously persisted
+        SID cookie + session token for this ``(host, username)`` pair is
+        loaded so subsequent CLI invocations skip the login handshake.
+        Pass a custom ``cache_dir`` to override the default
+        ``~/.cache/h388x-cli`` location (mostly useful for tests).
         """
         host = (host or "").strip()
         if "://" in host:
@@ -219,6 +242,82 @@ class ZTEH388XAPI:
             "Referer": f"{self.base_url}/",
         })
         self.session_token: Optional[str] = None
+
+        self.cache_enabled = cache_enabled
+        self._cache_dir = cache_dir or _default_cache_dir()
+        if cache_enabled:
+            self._load_cache()
+
+    # ------------------------------------------------------------- cache I/O
+
+    def _cache_path(self) -> Path:
+        """Per-(host, user) cache file path under the cache directory."""
+        key = hashlib.sha256(
+            f"{self.base_url}|{self.username}".encode()
+        ).hexdigest()[:16]
+        return self._cache_dir / f"session-{key}.json"
+
+    def _load_cache(self) -> bool:
+        """Hydrate the requests session from a previously saved cache.
+
+        Returns True when a usable cache was found and applied. Any
+        IO/JSON error is swallowed — a missing or corrupted cache just
+        forces a fresh login on next request.
+        """
+        path = self._cache_path()
+        try:
+            with path.open("r") as f:
+                data = _json.load(f)
+        except (OSError, ValueError):
+            return False
+        token = data.get("session_token")
+        cookies = data.get("cookies") or {}
+        if not token or not cookies:
+            return False
+        self.session_token = token
+        for name, value in cookies.items():
+            self.session.cookies.set(name, value)
+        return True
+
+    def _save_cache(self) -> None:
+        """Persist the live SID cookie + session token to disk (0600)."""
+        if not self.cache_enabled or not self.session_token:
+            return
+        cookies = {c.name: c.value for c in self.session.cookies}
+        if "SID" not in cookies:
+            return
+        try:
+            self._cache_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return
+        path = self._cache_path()
+        payload = {
+            "host": self.base_url,
+            "user": self.username,
+            "session_token": self.session_token,
+            "cookies": cookies,
+        }
+        tmp = path.with_suffix(".tmp")
+        try:
+            with tmp.open("w") as f:
+                _json.dump(payload, f)
+            try:
+                os.chmod(tmp, 0o600)
+            except OSError:
+                pass
+            os.replace(tmp, path)
+        except OSError:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+    def _clear_cache(self) -> None:
+        """Remove the on-disk cache for this (host, user) pair, if any."""
+        try:
+            self._cache_path().unlink(missing_ok=True)
+        except OSError:
+            pass
 
     # ------------------------------------------------------------------ login
 
@@ -264,7 +363,10 @@ class ZTEH388XAPI:
             except ValueError:
                 pass
 
-            return self.session.cookies.get("SID") is not None
+            ok = self.session.cookies.get("SID") is not None
+            if ok:
+                self._save_cache()
+            return ok
         except requests.RequestException:
             return False
 
@@ -1017,23 +1119,42 @@ class ZTEH388XAPI:
         except requests.RequestException:
             return False
 
-    # ------------------------------------------------------------------ logout
+    # --------------------------------------------------------- close / logout
 
-    def logout(self):
-        if not self.session_token:
-            self.session.close()
-            return
+    def close(self) -> None:
+        """Tear down the local requests session, keeping the modem session
+        alive on the server so subsequent CLI invocations can resume from
+        the on-disk cache. Called by the normal per-command teardown.
+        """
+        # Re-save the cookies even after read-only operations: the modem
+        # bumps the SID's lifetime on every authenticated request, and we
+        # might also have refreshed ``session_token`` mid-flow.
+        self._save_cache()
         try:
-            self.session.post(
-                f"{self.base_url}/?_type=loginData&_tag=logout_entry",
-                data={
-                    "IF_LogOff": "1",
-                    "_sessionTOKEN": self.session_token,
-                },
-                timeout=8,
-            )
-        except requests.RequestException:
-            pass
-        finally:
-            self.session.cookies.clear()
             self.session.close()
+        except Exception:
+            pass
+
+    def logout(self) -> None:
+        """Explicitly log out of the modem session and wipe the cache.
+
+        Use this when you want the next ``login()`` to start from a
+        clean slate (e.g. switching admin user, or freeing the single
+        admin slot the modem allows). The CLI exposes it as
+        ``h388x logout``.
+        """
+        if self.session_token:
+            try:
+                self.session.post(
+                    f"{self.base_url}/?_type=loginData&_tag=logout_entry",
+                    data={
+                        "IF_LogOff": "1",
+                        "_sessionTOKEN": self.session_token,
+                    },
+                    timeout=8,
+                )
+            except requests.RequestException:
+                pass
+        self._clear_cache()
+        self.session.cookies.clear()
+        self.session.close()
