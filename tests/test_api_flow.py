@@ -21,14 +21,19 @@ HOST = "http://modem.test"
 
 
 @pytest.fixture
-def api():
+def api(tmp_path):
     """Build an API client without performing the real login handshake.
 
     We pre-seed the session token so the methods that look at it
     (logout, reboot) don't trip over a missing value, and we let each
-    test register its own ``responses`` mocks.
+    test register its own ``responses`` mocks. ``cache_dir`` points to
+    an isolated temp directory so tests never touch the real
+    ``~/.cache/h388x-cli``.
     """
-    api = ZTEH388XAPI(HOST, "admin", "password")
+    api = ZTEH388XAPI(
+        HOST, "admin", "password",
+        cache_enabled=False, cache_dir=tmp_path,
+    )
     api.session_token = "FAKE-TOKEN"
     return api
 

@@ -180,6 +180,13 @@ def get_api(
     api = ZTEH388XAPI(
         host=host, username=user, password=password, verify_tls=not insecure
     )
+    # If a cached session was loaded from disk during ``__init__``, skip the
+    # login handshake entirely. The first authenticated request will either
+    # succeed or hit ``SessionTimeout``, in which case the ``_menudata``
+    # retry path re-runs ``login()`` once and refreshes the cache.
+    if api.session_token and api.session.cookies.get("SID"):
+        return api
+
     if state.json:
         ok = api.login()
     else:
@@ -284,7 +291,7 @@ def stats(
             except KeyboardInterrupt:
                 return
     finally:
-        api.logout()
+        api.close()
 
 
 # ----------------------------------------------------------------------- info
@@ -319,7 +326,7 @@ def info(
         table.add_row("Firmware Date", _format_firmware_date(d.firmware_date))
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------------ wan
@@ -381,7 +388,7 @@ def wan(
             "[dim]Tip: use --json for full details (MAC, VLAN, MTU, subnet).[/dim]"
         )
     finally:
-        api.logout()
+        api.close()
 
 
 # -------------------------------------------------------------------- clients
@@ -450,7 +457,7 @@ def clients(
             )
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ---------------------------------------------------------------------- wifi
@@ -528,7 +535,7 @@ def wifi(
             )
         console.print(ap_table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------- firewall
@@ -587,7 +594,7 @@ def firewall(
 
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # --------------------------------------------------------------- port-forward
@@ -660,7 +667,7 @@ def port_forward(
                 "[dim]Tip: pass --all to also show disabled rules.[/dim]"
             )
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------------ dns
@@ -717,7 +724,7 @@ def dns(
             )
         console.print(hosts_table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------ mac-table
@@ -757,7 +764,7 @@ def mac_table(
             )
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------------ arp
@@ -799,7 +806,7 @@ def arp(
             )
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ----------------------------------------------------------------------- ddns
@@ -832,7 +839,7 @@ def ddns(
         table.add_row("Last error", d.last_error or "-")
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------------ eth
@@ -937,7 +944,7 @@ def eth(
                 )
             console.print(wan_table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ----------------------------------------------------------------------- dhcp
@@ -1021,7 +1028,7 @@ def dhcp(
             )
         console.print(bind_table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ---------------------------------------------------------------------- dhcp6
@@ -1093,7 +1100,7 @@ def dhcp6(
             f"[dim]DHCPv6 client bindings (OBJ_DHCP6C_ID): {len(hosts)}[/dim]"
         )
     finally:
-        api.logout()
+        api.close()
 
 
 # ----------------------------------------------------------------------- voip
@@ -1190,7 +1197,7 @@ def voip(
             )
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ----------------------------------------------------------------------- upnp
@@ -1251,7 +1258,7 @@ def upnp(
             )
         console.print(maps_table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------------ dms
@@ -1285,7 +1292,7 @@ def dms(
         )
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------------ ftp
@@ -1326,7 +1333,7 @@ def ftp(
             users_table.add_row(u.username or "-", u.id or "-")
         console.print(users_table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------- nanocdn
@@ -1380,7 +1387,7 @@ def nanocdn(
         )
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ----------------------------------------------------------- wifi-advanced
@@ -1425,7 +1432,7 @@ def wifi_advanced(
             )
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------ wifi-acl
@@ -1477,7 +1484,7 @@ def wifi_acl(
             rule_table.add_row(r.mac or "-", r.ap_id or "-", r.id or "-")
         console.print(rule_table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------ wifi-schedule
@@ -1547,7 +1554,7 @@ def wifi_schedule(
             )
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------- band-steering
@@ -1582,7 +1589,7 @@ def band_steering(
         table.add_row("Band steering", _onoff(bs.enabled))
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------ topology
@@ -1680,7 +1687,7 @@ def topology(
                 )
             console.print(agent_table)
     finally:
-        api.logout()
+        api.close()
 
 
 def _render_generic_rows(
@@ -1779,7 +1786,7 @@ def voip_media(
             )
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------ voip-pos
@@ -1812,7 +1819,7 @@ def voip_pos(
             table.add_row(r.get("_InstID", "-"), _onoff(enabled))
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------- usb-devs
@@ -1836,7 +1843,7 @@ def usb_devs(
             "No USB storage device attached.",
         )
     finally:
-        api.logout()
+        api.close()
 
 
 # ----------------------------------------------------------- wifi-ssid-config
@@ -1887,7 +1894,7 @@ def wifi_ssid_config(
             )
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ----------------------------------------------------------------------- sntp
@@ -1944,7 +1951,7 @@ def sntp(
             srv_table.add_row(n, h or "-")
         console.print(srv_table)
     finally:
-        api.logout()
+        api.close()
 
 
 # --------------------------------------------------------------------- edns0
@@ -1978,7 +1985,7 @@ def edns0(
         table.add_row("Enabled", _onoff(enable_val))
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # --------------------------------------------------------------- ipv6-prefix
@@ -2006,7 +2013,7 @@ def ipv6_prefix(
             "No static IPv6 prefix configured.",
         )
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------ firewall-ipfilter
@@ -2034,7 +2041,7 @@ def firewall_ipfilter(
             "No IP-filter priority entry.",
         )
     finally:
-        api.logout()
+        api.close()
 
 
 # ----------------------------------------------------------- firewall-urlfilter
@@ -2058,7 +2065,7 @@ def firewall_urlfilter(
             "No URL-filter rules configured.",
         )
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------- parental-control
@@ -2082,7 +2089,7 @@ def parental_control(
             "No parental-control entries configured.",
         )
     finally:
-        api.logout()
+        api.close()
 
 
 # --------------------------------------------------------------- dsl-interface
@@ -2158,7 +2165,7 @@ def dsl_interface(
         errs.add_row("FEC errors (ATU-C)", s(dsl.atuc_fec_errors))
         console.print(errs)
     finally:
-        api.logout()
+        api.close()
 
 
 # --------------------------------------------------------------- admin-users
@@ -2188,7 +2195,7 @@ def admin_users(
             table.add_row(u.id or "-", u.username or "-", u.right or "-")
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ----------------------------------------------------------- web-login-timeout
@@ -2221,7 +2228,7 @@ def web_timeout(
         )
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------ mobile-wan
@@ -2267,7 +2274,7 @@ def mobile_wan(
             )
         console.print(table)
     finally:
-        api.logout()
+        api.close()
 
 
 # ----------------------------------------------------------------- public-lan
@@ -2299,7 +2306,32 @@ def public_lan(
         table.add_row("Public mask", pl.public_mask or "-")
         console.print(table)
     finally:
+        api.close()
+
+
+# --------------------------------------------------------------------- logout
+
+@app.command()
+def logout(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Log out of the modem and clear the cached session for this host."""
+    api = get_api(host, user, password, insecure)
+    try:
         api.logout()
+        if state.json:
+            _emit_json({"logout": "ok"})
+        else:
+            console.print("[green]Session terminated and cache cleared.[/green]")
+    except Exception as exc:
+        if state.json:
+            _emit_json({"logout": "failed", "error": str(exc)})
+        else:
+            console.print(f"[red]Logout failed: {exc}[/red]")
+        raise typer.Exit(code=1)
 
 
 # --------------------------------------------------------------------- reboot
@@ -2329,7 +2361,7 @@ def reboot(
         if not ok:
             raise typer.Exit(code=1)
     finally:
-        api.logout()
+        api.close()
 
 
 # ------------------------------------------------------------------- discover
@@ -2447,7 +2479,7 @@ def discover(
             "to the discovered endpoints.[/dim]"
         )
     finally:
-        api.logout()
+        api.close()
 
 
 if __name__ == "__main__":

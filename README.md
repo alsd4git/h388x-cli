@@ -79,6 +79,7 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 | `sntp` | NTP servers, timezone, current local time, DST. |
 | `admin-users` | Web admin accounts (username + privilege). |
 | `web-timeout` | Web UI idle session timeout (minutes). |
+| `logout` | Explicit modem logout + wipe the cached session for this host. |
 | `reboot` | Reboot the modem. `-y` to skip confirmation. |
 
 ### Discovery (introspection)
@@ -168,9 +169,15 @@ h388x --json clients | jq '.wifi | length'
 h388x --json stats --watch 5      # JSON-lines stream, one per refresh
 ```
 
-Each command opens a fresh admin session, performs the request, and logs
-out cleanly. The H388X allows **only one active admin session at a time**,
-so log out from the WebUI before running the CLI.
+Each command authenticates once and **caches the SID cookie** to
+`~/.cache/h388x-cli/session-<hash>.json` (0600, per `(host, user)`
+pair), so subsequent invocations skip the login handshake. The cache
+auto-refreshes on `SessionTimeout`. Run `h388x logout` to clear it
+explicitly (e.g. before switching admin user or freeing the modem's
+single admin slot).
+
+The H388X allows **only one active admin session at a time**, so log
+out from the WebUI before running the CLI.
 
 ### Example output
 
