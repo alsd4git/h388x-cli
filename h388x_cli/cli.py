@@ -2309,6 +2309,172 @@ def public_lan(
         api.close()
 
 
+_HEALTH_GLYPH = {
+    "ok": "[bold green]✓ OK[/bold green]",
+    "warn": "[yellow]⚠ WARN[/yellow]",
+    "fail": "[bold red]✗ FAIL[/bold red]",
+    "info": "[dim]· INFO[/dim]",
+}
+
+
+def _health_row(status: str, area: str, detail: str):
+    return _HEALTH_GLYPH.get(status, status), area, detail
+
+
+# --------------------------------------------------------------------- health
+
+@app.command()
+def health(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """One-shot status overview (info + DSL + WAN + VoIP + mesh)."""
+    api = get_api(host, user, password, insecure)
+    rows: List[tuple] = []
+    summary: Dict[str, Any] = {}
+    try:
+        # --- Device info ----------------------------------------------------
+        try:
+            info_raw = api.get_device_info()
+            d = DeviceInfo.model_validate(info_raw) if info_raw else None
+        except Exception:
+            d = None
+        if d:
+            rows.append(_health_row(
+                "ok", "Modem",
+                f"{d.model or '?'} · {d.software_version or '?'} · SN {d.serial_number or '?'}",
+            ))
+            summary["modem"] = {
+                "status": "ok",
+                "model": d.model, "software": d.software_version,
+                "serial": d.serial_number,
+            }
+        else:
+            rows.append(_health_row("fail", "Modem", "no device info returned"))
+            summary["modem"] = {"status": "fail"}
+
+        # --- DSL line -------------------------------------------------------
+        try:
+            dsl_raw = api.get_dsl_stats()
+            s = DSLStats.model_validate(dsl_raw) if dsl_raw else None
+        except Exception:
+            s = None
+        if s and (s.status or "").lower() == "up":
+            rows.append(_health_row(
+                "ok", "DSL",
+                f"{s.module_type or 'DSL'} {s.profile or ''} · "
+                f"↓{s.downstream_curr_rate or 0}/↑{s.upstream_curr_rate or 0} kbps",
+            ))
+            summary["dsl"] = {
+                "status": "ok",
+                "line_status": s.status,
+                "downstream_kbps": s.downstream_curr_rate,
+                "upstream_kbps": s.upstream_curr_rate,
+            }
+        elif s:
+            rows.append(_health_row(
+                "fail", "DSL", f"line status: {s.status or 'unknown'}"
+            ))
+            summary["dsl"] = {"status": "fail", "line_status": s.status}
+        else:
+            rows.append(_health_row("warn", "DSL", "no data"))
+            summary["dsl"] = {"status": "warn"}
+
+        # --- WAN connections ------------------------------------------------
+        try:
+            wan_rows = api.get_wan_connections()
+        except Exception:
+            wan_rows = []
+        wan_list = [WanConnection.model_validate(r) for r in wan_rows]
+        connected = [w for w in wan_list if (w.status or "").lower() == "connected"]
+        if connected:
+            for w in connected:
+                rows.append(_health_row(
+                    "ok", f"WAN/{w.name or '?'}",
+                    f"{w.ip_address or '-'} via {w.gateway or '-'} · "
+                    f"up {w.uptime_seconds if w.uptime_seconds is not None else '?'}s",
+                ))
+            summary["wan"] = {
+                "status": "ok",
+                "connected": [w.model_dump() for w in connected],
+            }
+        else:
+            rows.append(_health_row("fail", "WAN", "no Connected interface"))
+            summary["wan"] = {"status": "fail", "connected": []}
+
+        # --- VoIP SIP lines -------------------------------------------------
+        # SIP rows carry the registered phone number (``AuthUserName``) and
+        # the Italian-language state (``IsOnline``: ``Registrato`` /
+        # ``Non registrato``), which is what the health view needs.
+        try:
+            voip_data = api.get_voip_status()
+        except Exception:
+            voip_data = {}
+        sip_rows = voip_data.get("OBJ_VOIPSIPLINE_ID", []) if voip_data else []
+        sip_lines = [VoipSipLine.model_validate(r) for r in sip_rows]
+        voip_summary = []
+        for sl in sip_lines:
+            state_label = (sl.is_online or "").strip()
+            lower = state_label.lower()
+            registered = lower.startswith("registrat") and "non" not in lower
+            status = "ok" if registered else "warn"
+            label = sl.phone_name or (sl.id or "SIP?")
+            number = sl.auth_username or "-"
+            rows.append(_health_row(
+                status, f"VoIP/{label}",
+                f"{number} · {state_label or 'unknown'}",
+            ))
+            voip_summary.append({
+                "id": sl.id,
+                "phone_name": sl.phone_name,
+                "number": sl.auth_username,
+                "is_online": sl.is_online,
+                "status": status,
+            })
+        summary["voip"] = voip_summary
+
+        # --- Mesh / controller ---------------------------------------------
+        try:
+            topo = api.get_topology()
+        except Exception:
+            topo = {}
+        ctrl = (topo or {}).get("controllerData") or {}
+        layer1 = (topo or {}).get("agentlay1") or {}
+        layer2 = (topo or {}).get("agentlay2") or {}
+        agents = (layer1.get("MGET_INST_NUM") or 0) + (layer2.get("MGET_INST_NUM") or 0)
+        if ctrl:
+            rows.append(_health_row(
+                "info" if agents == 0 else "ok",
+                "Mesh",
+                f"controller {ctrl.get('DeviceName', '?')} · "
+                f"{ctrl.get('accdevCount', 0)} clients · {agents} agents",
+            ))
+            summary["mesh"] = {
+                "controller": ctrl.get("DeviceName"),
+                "associated_devices": ctrl.get("accdevCount"),
+                "agents": agents,
+            }
+        else:
+            rows.append(_health_row("warn", "Mesh", "no controller data"))
+            summary["mesh"] = {"status": "warn"}
+
+        if state.json:
+            _emit_json(summary)
+            return
+
+        table = Table(title="H388X health overview")
+        table.add_column("Status", no_wrap=True)
+        table.add_column("Area", style="cyan", no_wrap=True)
+        table.add_column("Detail", style="white")
+        for r in rows:
+            table.add_row(*r)
+        console.print(table)
+    finally:
+        api.close()
+
+
 # --------------------------------------------------------------------- logout
 
 @app.command()
