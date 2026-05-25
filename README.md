@@ -102,6 +102,25 @@ Or for development:
 uv sync
 ```
 
+### Shell completion
+
+After installing the `h388x` script (`uv tool install .`), enable
+tab-completion for your shell:
+
+```bash
+h388x --install-completion        # auto-detects bash / zsh / fish / powershell
+```
+
+Restart your shell, then `h388x <TAB><TAB>` lists every subcommand
+and `h388x <cmd> --<TAB><TAB>` cycles through its flags. To inspect
+the generated script instead of installing it, use
+`h388x --show-completion <bash|zsh|fish>`.
+
+Note: completion is wired to the installed `h388x` entry point. When
+running the CLI through `uv run python -m h388x_cli.cli` (development
+mode) the shell can't detect the program name and completion is not
+available — install with `uv tool install .` for that.
+
 ## Configuration
 
 Create a `.env` file (see [`.env.example`](./.env.example)) at the project root:
