@@ -2475,6 +2475,52 @@ def health(
         api.close()
 
 
+# ---------------------------------------------------------------------- watch
+
+@app.command(
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def watch(
+    ctx: typer.Context,
+    interval: float = typer.Argument(
+        ..., help="Refresh every N seconds (decimals allowed)."
+    ),
+    command: List[str] = typer.Argument(
+        ...,
+        help=(
+            "h388x subcommand to repeat, with its own flags. "
+            "Example: `h388x watch 5 voip` or `h388x watch 2 clients --leases`."
+        ),
+    ),
+):
+    """Re-run any h388x command in a loop (Unix watch(1) style).
+
+    Spawns the CLI as a subprocess so it works with any existing
+    command without touching their implementations. Inherits the
+    session cache, so warm runs stay fast.
+    """
+    import shutil
+    import subprocess
+
+    # Resolve the entry point used by the user: prefer the installed
+    # ``h388x`` script (faster startup); fall back to the current
+    # Python interpreter + module form when running from source.
+    h388x_bin = shutil.which("h388x")
+    if h388x_bin:
+        argv = [h388x_bin, *command]
+    else:
+        argv = [sys.executable, "-m", "h388x_cli.cli", *command]
+
+    clear_cmd = "cls" if os.name == "nt" else "clear"
+    try:
+        while True:
+            os.system(clear_cmd)
+            subprocess.run(argv)
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        return
+
+
 # --------------------------------------------------------------------- logout
 
 @app.command()

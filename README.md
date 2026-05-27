@@ -81,6 +81,7 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 | `web-timeout` | Web UI idle session timeout (minutes). |
 | `logout` | Explicit modem logout + wipe the cached session for this host. |
 | `reboot` | Reboot the modem. `-y` to skip confirmation. |
+| `watch INTERVAL CMD…` | Re-run any subcommand every `INTERVAL` seconds (e.g. `h388x watch 5 voip`). Generic Unix `watch(1)`-style wrapper. |
 
 ### Discovery (introspection)
 
@@ -176,6 +177,10 @@ h388x firewall-ipfilter
 
 # Mesh topology
 h388x topology
+
+# Re-run any subcommand in a loop (Unix watch(1) style)
+h388x watch 5 voip                # refresh VoIP every 5 seconds
+h388x watch 2 clients --leases    # any sub-flag is forwarded as-is
 
 # Reboot
 h388x reboot
