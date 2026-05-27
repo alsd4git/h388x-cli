@@ -275,8 +275,15 @@ class ZTEH388XAPI:
         if not token or not cookies:
             return False
         self.session_token = token
+        # Set the restored cookies pinned to the modem host. Without an
+        # explicit domain, requests defaults to ``domain=""`` and any
+        # ``Set-Cookie`` reply from the server (which carries the request
+        # host as its domain) would coexist as a duplicate — causing
+        # ``CookieConflictError`` on ``cookies.get("SID")``.
+        from urllib.parse import urlparse
+        host = urlparse(self.base_url).hostname or ""
         for name, value in cookies.items():
-            self.session.cookies.set(name, value)
+            self.session.cookies.set(name, value, domain=host, path="/")
         return True
 
     def _save_cache(self) -> None:
@@ -318,6 +325,14 @@ class ZTEH388XAPI:
             self._cache_path().unlink(missing_ok=True)
         except OSError:
             pass
+
+    def _has_sid_cookie(self) -> bool:
+        """True iff the session jar carries at least one ``SID`` cookie.
+
+        Avoids ``CookieConflictError`` from ``RequestsCookieJar.get`` when
+        more than one ``SID`` is present (different domain/path scopes).
+        """
+        return any(c.name == "SID" for c in self.session.cookies)
 
     # ------------------------------------------------------------------ login
 
@@ -363,7 +378,7 @@ class ZTEH388XAPI:
             except ValueError:
                 pass
 
-            ok = self.session.cookies.get("SID") is not None
+            ok = self._has_sid_cookie()
             if ok:
                 self._save_cache()
             return ok
