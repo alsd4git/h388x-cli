@@ -169,6 +169,21 @@ _SEED_VIEWS: Tuple[str, ...] = (
     "rebootAndReset",
     "lanMgrIpv4",
     "localNetStatus",
+    # Synthetic view that arms the dashboard tile endpoints
+    # (``*_homepage_lua.lua``). Not exposed in menuTreeJSON.
+    "homePage",
+)
+
+# Dashboard tile endpoints (``*_homepage_lua.lua``). They are not linked
+# from the HTML nor the menuTreeJSON in some firmwares, but they are
+# always there and yield rich data once armed via the ``homePage`` view.
+# (tag, extras) pairs.
+_SEED_HOMEPAGE_TILES: Tuple[Tuple[str, Dict[str, str]], ...] = (
+    ("firewall_homepage_lua.lua", {}),
+    ("usb_homepage_lua.lua", {}),
+    ("voip_homepage_lua.lua", {}),
+    ("accessdev_homepage_lua.lua", {"InstNum": "5"}),
+    ("wlan_homepage_lua.lua", {"InstNum": "5"}),
 )
 
 
@@ -218,6 +233,8 @@ class Spider:
             self._record_endpoint(
                 "menuView", tag, {"Menu3Location": "0"}, source="seed"
             )
+        for tag, extras in _SEED_HOMEPAGE_TILES:
+            self._record_endpoint("menuData", tag, dict(extras), source="seed")
 
         # Single interleaved loop: drain assets (cheap, mine HTML/JS) before
         # endpoints, so per-page JS scoperti dopo una view vengono
@@ -418,6 +435,16 @@ class Spider:
             parent = self._data_parent_view.get(ep.tag)
             if parent and self._requests_made < self.max_requests:
                 self._arm_view(parent, source=f"arm-for:{ep.url()}")
+            elif (
+                ep.tag.endswith("_homepage_lua.lua")
+                and self._requests_made < self.max_requests
+            ):
+                # Dashboard tiles (``*_homepage_lua.lua``) are bound to the
+                # synthetic ``homePage`` menuView (the only ``_tag`` not
+                # exposed in ``menuTreeJSON``). Hitting any other view in
+                # between leaves them serving ``SessionTimeout``, so arm
+                # them by re-rendering the dashboard view right before.
+                self._arm_view("homePage", source=f"arm-for:{ep.url()}")
 
         text = self._do_fetch_endpoint(ep)
         if text is None:
