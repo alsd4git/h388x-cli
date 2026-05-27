@@ -2650,7 +2650,7 @@ def discover(
         except Exception:
             dev = {}
         result["device"] = {
-            "ip": ip,
+            "host": api.base_url,
             "model": dev.get("ModelName"),
             "serial": dev.get("SerialNumber"),
             "software": dev.get("SoftwareVer"),
