@@ -78,7 +78,7 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 |---------|--------------|
 | `sntp` | NTP servers, timezone, current local time, DST. |
 | `admin-users` | Web admin accounts (username + privilege). |
-| `web-timeout` | Web UI idle session timeout (minutes). |
+| `web-timeout` | Web UI idle session timeout (minutes). Add `--set MINUTES` (1–60) to update. |
 | `logout` | Explicit modem logout + wipe the cached session for this host. |
 | `reboot` | Reboot the modem. `-y` to skip confirmation. |
 | `watch INTERVAL CMD…` | Re-run any subcommand every `INTERVAL` seconds (e.g. `h388x watch 5 voip`). Generic Unix `watch(1)`-style wrapper. |

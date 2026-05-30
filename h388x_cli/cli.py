@@ -2206,10 +2206,43 @@ def web_timeout(
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
     insecure: bool = _insecure_opt(),
+    set_minutes: Optional[int] = typer.Option(
+        None,
+        "--set",
+        metavar="MINUTES",
+        help=(
+            "Set a new idle timeout in minutes (1–60). Without this flag "
+            "the command just reads the current value."
+        ),
+        min=1,
+        max=60,
+    ),
 ):
-    """Show the web UI idle session timeout (minutes)."""
+    """Show or update the web UI idle session timeout (minutes)."""
     api = get_api(host, user, password, insecure)
     try:
+        if set_minutes is not None:
+            ok, body = api.set_web_login_timeout(set_minutes)
+            if not ok:
+                if state.json:
+                    _emit_json({"ok": False, "raw": body[:400]})
+                    raise typer.Exit(code=1)
+                console.print(
+                    f"[red]Set failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+                raise typer.Exit(code=1)
+            # Read back to confirm and surface the actual stored value.
+            row = api.get_web_login_timeout()
+            tm = WebLoginTimeout.model_validate(row) if row else None
+            if state.json:
+                _emit_json({"ok": True, **(tm.model_dump() if tm else {})})
+                return
+            console.print(
+                f"[green]Updated[/green] web idle timeout → "
+                f"[bold]{tm.timeout if tm else set_minutes}[/bold] minutes."
+            )
+            return
+
         row = api.get_web_login_timeout()
         tm = WebLoginTimeout.model_validate(row) if row else None
         if state.json:
