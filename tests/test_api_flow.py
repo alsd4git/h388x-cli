@@ -200,3 +200,101 @@ def test_menudata_relogins_on_session_timeout(api):
     api.login = lambda: True  # type: ignore[assignment]
     rows = api.get_admin_users(retry=True)
     assert rows and rows[0]["Username"] == "admin"
+
+
+# --- write actions (_post_action) ------------------------------------------
+
+OK_XML = (
+    "<ajax_response_xml_root>"
+    "<IF_ERRORSTR>SUCC</IF_ERRORSTR>"
+    "<IF_ERRORID>0</IF_ERRORID>"
+    "<sess_token>NEW-TOKEN</sess_token>"
+    "</ajax_response_xml_root>"
+)
+
+ERR_PAGE_EXPIRED_XML = (
+    "<ajax_response_xml_root>"
+    "<IF_ERRORSTR>Page expired</IF_ERRORSTR>"
+    "<IF_ERRORID>-1452</IF_ERRORID>"
+    "</ajax_response_xml_root>"
+)
+
+
+@responses.activate
+def test_set_web_login_timeout_happy_path(api):
+    """Arm view -> refresh token via login_entry -> POST Apply -> OK."""
+    view = f"{HOST}{api.WEB_TIMEOUT_VIEW_URL}"
+    data = f"{HOST}{api.WEB_TIMEOUT_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "FRESH-TOKEN"}, status=200,
+    )
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+    ok, body = api.set_web_login_timeout(10)
+    assert ok is True
+    assert "SUCC" in body
+    # Session token rotated from the response.
+    assert api.session_token == "NEW-TOKEN"
+
+    # Verify the POST body contains the exact convention from the JS.
+    post_call = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post_call.request.body
+    assert "IF_ACTION=Apply" in sent
+    assert "Timeout=10" in sent
+    assert "_InstID=IGD" in sent
+    # Token sent must be the freshly-fetched one, not the cached one.
+    assert "_sessionTOKEN=FRESH-TOKEN" in sent
+
+
+@responses.activate
+def test_set_web_login_timeout_surfaces_modem_error(api):
+    """Non-SUCC response → ok=False, body returned verbatim."""
+    view = f"{HOST}{api.WEB_TIMEOUT_VIEW_URL}"
+    data = f"{HOST}{api.WEB_TIMEOUT_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "FRESH-TOKEN"}, status=200,
+    )
+    responses.add(responses.POST, data, body=ERR_PAGE_EXPIRED_XML, status=200)
+
+    ok, body = api.set_web_login_timeout(10)
+    assert ok is False
+    assert "-1452" in body
+
+
+@responses.activate
+def test_post_action_retries_on_session_timeout(api):
+    """SessionTimeout on the POST should trigger a re-login + replay."""
+    view = f"{HOST}{api.WEB_TIMEOUT_VIEW_URL}"
+    data = f"{HOST}{api.WEB_TIMEOUT_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    # First attempt:
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "T1"}, status=200,
+    )
+    responses.add(
+        responses.POST, data,
+        body="<root>SessionTimeout</root>", status=200,
+    )
+    # After re-login (mocked):
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "T2"}, status=200,
+    )
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+    api.login = lambda: True  # type: ignore[assignment]
+    ok, body = api.set_web_login_timeout(7)
+    assert ok is True
+    assert "SUCC" in body

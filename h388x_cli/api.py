@@ -4,7 +4,7 @@ import os
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 import requests
 
@@ -437,6 +437,101 @@ class ZTEH388XAPI:
             return self._parse_instances(resp.text, root_element)
         except requests.RequestException:
             return []
+
+    def _refresh_session_token(self, body: str) -> None:
+        """Update ``self.session_token`` from a POST response, if present.
+
+        The modem rotates ``_sessionTOKEN`` on every successful write and
+        embeds the new value in the response (either as the JSON field
+        ``sess_token`` for ``loginData`` flows, or inside ``<sess_token>``
+        in the standard XML response envelope). Silently no-op on any
+        parse error — the next request will just trigger a SessionTimeout
+        + re-login.
+        """
+        try:
+            tok = _json.loads(body).get("sess_token")
+            if tok:
+                self.session_token = tok
+                return
+        except (ValueError, TypeError):
+            pass
+        m = re.search(r"<sess_token>([^<]+)</sess_token>", body)
+        if m:
+            self.session_token = m.group(1).strip()
+
+    def _fetch_fresh_session_token(self) -> bool:
+        """Pull the current ``_sessionTOKEN`` for our SID cookie.
+
+        The modem rotates the CSRF token at every authenticated request,
+        and ``login_entry`` (the same endpoint used during login) returns
+        the live value as JSON ``{"sess_token": "..."}``. Called right
+        before a write so we don't fight a stale token loaded from the
+        session cache. Returns True on success.
+        """
+        try:
+            r = self.session.get(
+                f"{self.base_url}/?_type=loginData&_tag=login_entry",
+                headers=self.NO_CACHE,
+                timeout=8,
+            )
+            tok = r.json().get("sess_token")
+            if tok:
+                self.session_token = tok
+                return True
+        except (requests.RequestException, ValueError):
+            pass
+        return False
+
+    def _post_action(
+        self,
+        view_url: str,
+        data_url: str,
+        action: str,
+        fields: Dict[str, str],
+        retry: bool = True,
+    ) -> Tuple[bool, str]:
+        """POST a write action against a menuData endpoint.
+
+        Mirrors the WebUI's ``dataPost`` flow: arm the parent view,
+        refresh the ``_sessionTOKEN`` from ``login_entry`` (the token
+        rotates server-side at every request, so a value loaded from
+        the session cache is almost always stale → ``IF_ERRORID=-1452
+        "page expired"``), then POST ``IF_ACTION=<action>`` + the
+        caller's ``fields`` + the rotating token. On ``SessionTimeout``
+        re-logs in and replays the call once. Returns ``(ok, raw_body)``
+        where ``ok`` means ``IF_ERRORSTR=SUCC``.
+        """
+        try:
+            self.session.get(
+                f"{self.base_url}{view_url}", headers=self.NO_CACHE, timeout=8
+            )
+            self._fetch_fresh_session_token()
+            payload = {
+                "IF_ACTION": action,
+                **{k: ("" if v is None else str(v)) for k, v in fields.items()},
+                "_sessionTOKEN": self.session_token or "",
+            }
+            resp = self.session.post(
+                f"{self.base_url}{data_url}",
+                data=payload,
+                headers=self.NO_CACHE,
+                timeout=10,
+            )
+            body = resp.text
+            if self._is_session_expired(body):
+                if retry and self.login():
+                    return self._post_action(
+                        view_url, data_url, action, fields, retry=False
+                    )
+                return False, body
+            self._refresh_session_token(body)
+            ok = (
+                resp.status_code == 200
+                and "<IF_ERRORSTR>SUCC</IF_ERRORSTR>" in body
+            )
+            return ok, body
+        except requests.RequestException as e:
+            return False, f"requests error: {e}"
 
     def _menudata_multi(
         self,
@@ -883,6 +978,23 @@ class ZTEH388XAPI:
             "OBJ_USERIF_ID", retry,
         )
         return rows[0] if rows else {}
+
+    def set_web_login_timeout(
+        self, minutes: int, inst_id: str = "IGD"
+    ) -> Tuple[bool, str]:
+        """Set the web UI idle session timeout (minutes).
+
+        Posts ``IF_ACTION=Apply`` with ``Timeout`` and ``_InstID`` to
+        ``web_login_timeout_lua.lua``. Returns ``(ok, raw_body)``.
+        See ``firmware/notes/2026-05-29-write-actions-protocol.md`` for
+        the convention.
+        """
+        return self._post_action(
+            self.WEB_TIMEOUT_VIEW_URL,
+            self.WEB_TIMEOUT_URL,
+            action="Apply",
+            fields={"_InstID": inst_id, "Timeout": str(int(minutes))},
+        )
 
     def get_mobile_wan(self, retry: bool = True) -> Dict[str, Any]:
         """Return USB-dongle mobile backup status.
