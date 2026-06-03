@@ -54,6 +54,8 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 |---------|--------------|
 | `firewall` | Level, anti-DoS, URL filter master, DMZ summary. |
 | `port-forward` | Configured NAT/port-forwarding rules. |
+| `port-forward-add DESC PROTO EXT_PORT INTERNAL_IP` | Create a NAT rule. Options: `--int-port`, `--ext-port-end`, `--remote-host[-end]`, `--disable`. |
+| `port-forward-del ID` | Delete a NAT rule by `_OBJ_InstID` (full path or bare suffix `9`). `-y` to skip confirmation. |
 | `firewall-ipfilter` | User-defined IP-filter rules + priority slot. |
 | `firewall-urlfilter` | Per-URL filter rules (master toggle in `firewall`). |
 | `parental-control` | Parental-control MAC+schedule bindings. |

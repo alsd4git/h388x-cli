@@ -298,3 +298,81 @@ def test_post_action_retries_on_session_timeout(api):
     ok, body = api.set_web_login_timeout(7)
     assert ok is True
     assert "SUCC" in body
+
+
+# --- port-forwarding write actions -----------------------------------------
+
+@responses.activate
+def test_add_port_forwarding_rule_uses_apply_with_inst_id_minus_one(api):
+    """The WebUI submits 'new' rows as ``IF_ACTION=Apply`` +
+    ``OBJ_FWPM_ID._OBJ_InstID=-1``. Port number defaults must also
+    propagate (internal_port = external_port, end-range = port)."""
+    view = f"{HOST}{api.PORT_FORWARDING_VIEW_URL}"
+    data = f"{HOST}{api.PORT_FORWARDING_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "FRESH-TOKEN"}, status=200,
+    )
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+    ok, body = api.add_port_forwarding_rule(
+        description="ssh", protocol="tcp",
+        external_port=22, internal_client="192.168.1.50",
+    )
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "IF_ACTION=Apply" in sent
+    # protocol upper-cased
+    assert "OBJ_FWPM_ID.Protocol=TCP" in sent
+    # "new instance" magic marker
+    assert "OBJ_FWPM_ID._OBJ_InstID=-1" in sent
+    # port defaults: int port == ext port, end-range == port
+    assert "OBJ_FWPM_ID.ExternalPort=22" in sent
+    assert "OBJ_FWPM_ID.ExternalPortEndRange=22" in sent
+    assert "OBJ_FWPM_ID.InternalPort=22" in sent
+    # body must be prefixed with the OBJ root, not bare ParaNames
+    assert "OBJ_FWPM_ID.Description=ssh" in sent
+    # description+client present, no bare-name leaks
+    assert "&Description=ssh" not in sent
+    assert "OBJ_FWPM_ID.InternalClient=192.168.1.50" in sent
+
+
+def test_add_port_forwarding_rejects_invalid_protocol(api):
+    """Protocol validation runs entirely client-side; no HTTP traffic."""
+    ok, body = api.add_port_forwarding_rule(
+        description="x", protocol="GRE",
+        external_port=80, internal_client="192.168.1.1",
+    )
+    assert ok is False
+    assert "TCP/UDP/BOTH" in body
+
+
+@responses.activate
+def test_del_port_forwarding_rule_uses_delete_action(api):
+    """Delete must POST ``IF_ACTION=Delete`` (the long form used by
+    ``initial_button(buttonType='Delete')`` in home.html — NOT 'Del')."""
+    view = f"{HOST}{api.PORT_FORWARDING_VIEW_URL}"
+    data = f"{HOST}{api.PORT_FORWARDING_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "FRESH-TOKEN"}, status=200,
+    )
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+    ok, _ = api.del_port_forwarding_rule("DEV.NAT.PtMapping7")
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "IF_ACTION=Delete" in sent
+    # Defensive: must not regress to the wrong short form.
+    assert "IF_ACTION=Del&" not in sent and not sent.endswith("IF_ACTION=Del")
+    assert "OBJ_FWPM_ID._OBJ_InstID=DEV.NAT.PtMapping7" in sent
