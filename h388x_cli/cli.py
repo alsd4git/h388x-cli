@@ -670,6 +670,164 @@ def port_forward(
         api.close()
 
 
+@app.command("port-forward-add")
+def port_forward_add(
+    description: str = typer.Argument(..., help="Free-form rule name."),
+    protocol: str = typer.Argument(
+        ..., help="TCP | UDP | BOTH (case-insensitive)."
+    ),
+    external_port: int = typer.Argument(
+        ..., min=1, max=65535, help="WAN port to expose."
+    ),
+    internal_client: str = typer.Argument(
+        ..., help="LAN IPv4 to forward the traffic to."
+    ),
+    internal_port: Optional[int] = typer.Option(
+        None, "--int-port",
+        min=1, max=65535,
+        help="LAN port (default: same as EXTERNAL_PORT).",
+    ),
+    external_port_end: Optional[int] = typer.Option(
+        None, "--ext-port-end",
+        min=1, max=65535,
+        help="End of WAN port range (default: same as EXTERNAL_PORT).",
+    ),
+    remote_host: str = typer.Option(
+        "0.0.0.0", "--remote-host",
+        help='Source IP restriction. "0.0.0.0" = any (default).',
+    ),
+    remote_host_end: str = typer.Option(
+        "0.0.0.0", "--remote-host-end",
+        help='End of source IP range. "0.0.0.0" = same as --remote-host.',
+    ),
+    disable: bool = typer.Option(
+        False, "--disable",
+        help="Create the rule disabled (defaults to enabled).",
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Add a new port-forwarding rule (NAT)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        ok, body = api.add_port_forwarding_rule(
+            description=description,
+            protocol=protocol,
+            external_port=external_port,
+            internal_client=internal_client,
+            internal_port=internal_port,
+            external_port_end=external_port_end,
+            remote_host=remote_host,
+            remote_host_end=remote_host_end,
+            enable=not disable,
+        )
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Add failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+
+        rows = api.get_port_forwarding_rules()
+        new_rules = [
+            PortForwardingRule.model_validate(r) for r in rows
+            if r.get("Description") == description
+        ]
+        if state.json:
+            _emit_json({
+                "ok": True,
+                "added": [r.model_dump() for r in new_rules],
+            })
+            return
+        if new_rules:
+            r = new_rules[-1]
+            console.print(
+                f"[green]Added[/green] port-forward "
+                f"[bold]{r.id or '?'}[/bold]: "
+                f"{r.protocol} {r.external_port} → "
+                f"{r.internal_client}:{r.internal_port}  ([cyan]{r.description}[/cyan])"
+            )
+        else:
+            console.print(
+                f"[green]Added[/green] rule [cyan]{description}[/cyan] "
+                f"(modem returned SUCC but no matching row read back)."
+            )
+    finally:
+        api.close()
+
+
+@app.command("port-forward-del")
+def port_forward_del(
+    rule_id: str = typer.Argument(
+        ...,
+        help=(
+            "Rule _OBJ_InstID. Either the bare suffix (e.g. '7') or the "
+            "full path 'DEV.NAT.PtMapping7' (as shown by `h388x port-forward`)."
+        ),
+    ),
+    yes: bool = typer.Option(
+        False, "-y", "--yes",
+        help="Skip the confirmation prompt.",
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Delete a port-forwarding rule by ID."""
+    inst_id = (
+        rule_id
+        if rule_id.startswith("DEV.NAT.PtMapping")
+        else f"DEV.NAT.PtMapping{rule_id}"
+    )
+    api = get_api(host, user, password, insecure)
+    try:
+        rows = api.get_port_forwarding_rules()
+        target = next(
+            (r for r in rows if r.get("_OBJ_InstID") == inst_id), None
+        )
+        if target is None:
+            if state.json:
+                _emit_json({"ok": False, "error": f"rule {inst_id!r} not found"})
+            else:
+                console.print(f"[red]No rule with id[/red] [bold]{inst_id}[/bold].")
+            raise typer.Exit(code=1)
+
+        if not yes and not state.json:
+            rule = PortForwardingRule.model_validate(target)
+            console.print(
+                f"About to delete [bold]{inst_id}[/bold]: "
+                f"{rule.protocol} {rule.external_port} → "
+                f"{rule.internal_client}:{rule.internal_port}  "
+                f"([cyan]{rule.description}[/cyan])"
+            )
+            if not typer.confirm("Proceed?"):
+                console.print("[yellow]Aborted.[/yellow]")
+                raise typer.Exit(code=1)
+
+        ok, body = api.del_port_forwarding_rule(inst_id)
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Delete failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+        if state.json:
+            _emit_json({"ok": True, "deleted": inst_id})
+        else:
+            console.print(
+                f"[green]Deleted[/green] port-forward [bold]{inst_id}[/bold]."
+            )
+    finally:
+        api.close()
+
+
 # ------------------------------------------------------------------------ dns
 
 @app.command()

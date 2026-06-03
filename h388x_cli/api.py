@@ -665,6 +665,82 @@ class ZTEH388XAPI:
             "OBJ_FWPM_ID", retry,
         )
 
+    # OBJ_FWPM_ID exposes its ParaNames prefixed with the root in the GET
+    # response (e.g. ``OBJ_FWPM_ID.Enable``). The WebUI's ``dataPost``
+    # mirrors that on the POST side: every form input id keeps the prefix,
+    # so we have to do the same here or the modem silently drops the row.
+    _PFWD_PREFIX = "OBJ_FWPM_ID"
+
+    @staticmethod
+    def _prefixed(prefix: str, fields: Dict[str, str]) -> Dict[str, str]:
+        return {f"{prefix}.{k}": v for k, v in fields.items()}
+
+    def add_port_forwarding_rule(
+        self,
+        description: str,
+        protocol: str,
+        external_port: int,
+        internal_client: str,
+        internal_port: Optional[int] = None,
+        external_port_end: Optional[int] = None,
+        remote_host: str = "0.0.0.0",
+        remote_host_end: str = "0.0.0.0",
+        enable: bool = True,
+    ) -> Tuple[bool, str]:
+        """Create a new port-forwarding rule.
+
+        Despite the name, the WebUI submits new instances with the same
+        ``IF_ACTION=Apply`` that edits existing ones, distinguished only
+        by ``_OBJ_InstID=-1`` (the magic "new" marker rendered as
+        ``<input id='OBJ_FWPM_ID._OBJ_InstID' value='-1'>`` in the
+        ``portForwardingMenu`` view). The server then assigns the real
+        ``DEV.NAT.PtMapping<N>`` id.
+
+        ``protocol`` must be one of ``TCP``, ``UDP``, ``BOTH``.
+        ``internal_port`` defaults to ``external_port`` (single-port
+        mapping) and ``external_port_end`` defaults to ``external_port``
+        as well. ``remote_host`` ``0.0.0.0`` means "any source".
+        """
+        proto = protocol.upper()
+        if proto not in {"TCP", "UDP", "BOTH"}:
+            return False, f"protocol must be TCP/UDP/BOTH (got {protocol!r})"
+        ext_end = external_port_end if external_port_end is not None else external_port
+        int_port = internal_port if internal_port is not None else external_port
+        fields = self._prefixed(self._PFWD_PREFIX, {
+            "_OBJ_InstID": "-1",
+            "Enable": "1" if enable else "0",
+            "Description": description,
+            "Protocol": proto,
+            "ExternalPort": str(external_port),
+            "ExternalPortEndRange": str(ext_end),
+            "InternalClient": internal_client,
+            "InternalPort": str(int_port),
+            "RemoteHost": remote_host,
+            "RemoteHostEndRange": remote_host_end,
+        })
+        return self._post_action(
+            self.PORT_FORWARDING_VIEW_URL,
+            self.PORT_FORWARDING_URL,
+            action="Apply",
+            fields=fields,
+        )
+
+    def del_port_forwarding_rule(self, inst_id: str) -> Tuple[bool, str]:
+        """Delete a port-forwarding rule by its ``_OBJ_InstID``
+        (e.g. ``DEV.NAT.PtMapping7``).
+
+        Uses ``IF_ACTION=Delete`` to mirror the WebUI's ``Btn_delete``
+        handler (``initial_button(buttonType="Delete", ...)`` in the
+        modem's inline JS — NOT the shorter ``"Del"``).
+        """
+        fields = self._prefixed(self._PFWD_PREFIX, {"_OBJ_InstID": inst_id})
+        return self._post_action(
+            self.PORT_FORWARDING_VIEW_URL,
+            self.PORT_FORWARDING_URL,
+            action="Delete",
+            fields=fields,
+        )
+
     # ------------------------------------------------------------------- DNS
 
     def get_dns_local(self, retry: bool = True) -> Dict[str, str]:
