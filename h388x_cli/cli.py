@@ -1189,6 +1189,143 @@ def dhcp(
         api.close()
 
 
+# Static DHCPv4 reservations are exposed by the modem with instance ids
+# shaped like ``DEV.V4DP.Sr.Pl1.Bd<N>`` (one pool, one binding subtree).
+# Accept a bare suffix on the CLI and expand it, mirroring the
+# port-forward-del UX (``DEV.NAT.PtMapping<N>``).
+_DHCP_BIND_ID_PREFIX = "DEV.V4DP.Sr.Pl1.Bd"
+
+
+@app.command("dhcp-reserve-add")
+def dhcp_reserve_add(
+    mac: str = typer.Argument(
+        ..., help="Client MAC address (e.g. AA:BB:CC:DD:EE:FF)."
+    ),
+    ip_address: str = typer.Argument(
+        ..., help="LAN IPv4 to bind to this MAC."
+    ),
+    name: str = typer.Argument(
+        ..., help="Free-form hostname/label for the reservation."
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Add a static DHCPv4 reservation (MAC → IP)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        ok, body = api.add_dhcp_reservation(
+            mac=mac, ip_address=ip_address, name=name,
+        )
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Add failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+
+        rows = api.get_dhcp_bindings()
+        new_rows = [
+            DhcpBinding.model_validate(r) for r in rows
+            if (r.get("MACAddr") or "").lower() == mac.lower()
+        ]
+        if state.json:
+            _emit_json({
+                "ok": True,
+                "added": [b.model_dump() for b in new_rows],
+            })
+            return
+        if new_rows:
+            b = new_rows[-1]
+            # ``console.print`` parses ``[..]`` as rich markup, and a
+            # MAC like ``02:AB:CD:...`` contains substrings (``[ab]``,
+            # ``[cd]``) that match emoji shortcodes. Disable markup on
+            # the MAC line so addresses render verbatim.
+            console.print(
+                f"[green]Added[/green] reservation "
+                f"[bold]{b.id or '?'}[/bold]: "
+                f"([cyan]{b.name or name}[/cyan]) → {b.ip_address or ip_address}"
+            )
+            console.print(f"  MAC: {b.mac or mac}", markup=False, emoji=False)
+        else:
+            console.print(
+                f"[green]Added[/green] reservation for [cyan]{mac}[/cyan] "
+                f"(modem returned SUCC but no matching row read back)."
+            )
+    finally:
+        api.close()
+
+
+@app.command("dhcp-reserve-del")
+def dhcp_reserve_del(
+    binding_id: str = typer.Argument(
+        ...,
+        help=(
+            "Binding _OBJ_InstID. Either the bare suffix (e.g. '1') or the "
+            "full path 'DEV.V4DP.Sr.Pl1.Bd1' (as shown by `h388x dhcp`)."
+        ),
+    ),
+    yes: bool = typer.Option(
+        False, "-y", "--yes",
+        help="Skip the confirmation prompt.",
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Delete a DHCPv4 reservation by ID."""
+    inst_id = (
+        binding_id
+        if binding_id.startswith(_DHCP_BIND_ID_PREFIX)
+        else f"{_DHCP_BIND_ID_PREFIX}{binding_id}"
+    )
+    api = get_api(host, user, password, insecure)
+    try:
+        rows = api.get_dhcp_bindings()
+        target = next(
+            (r for r in rows if r.get("_OBJ_InstID") == inst_id), None
+        )
+        if target is None:
+            if state.json:
+                _emit_json({"ok": False, "error": f"binding {inst_id!r} not found"})
+            else:
+                console.print(f"[red]No reservation with id[/red] [bold]{inst_id}[/bold].")
+            raise typer.Exit(code=1)
+
+        if not yes and not state.json:
+            b = DhcpBinding.model_validate(target)
+            console.print(
+                f"About to delete [bold]{inst_id}[/bold]: "
+                f"([cyan]{b.name or '-'}[/cyan]) → {b.ip_address or '-'}"
+            )
+            console.print(f"  MAC: {b.mac or '-'}", markup=False, emoji=False)
+            if not typer.confirm("Proceed?"):
+                console.print("[yellow]Aborted.[/yellow]")
+                raise typer.Exit(code=1)
+
+        ok, body = api.del_dhcp_reservation(inst_id)
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Delete failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+        if state.json:
+            _emit_json({"ok": True, "deleted": inst_id})
+        else:
+            console.print(
+                f"[green]Deleted[/green] reservation [bold]{inst_id}[/bold]."
+            )
+    finally:
+        api.close()
+
+
 # ---------------------------------------------------------------------- dhcp6
 
 @app.command()

@@ -31,6 +31,8 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 | `mac-table` | Bridge L2 forwarding table (MAC ↔ port). |
 | `eth` | Ethernet port status (4 LAN + WAN uplink). |
 | `dhcp` | DHCPv4 server config + static reservations. |
+| `dhcp-reserve-add MAC IP NAME` | Add a static DHCPv4 reservation. IP must be inside the configured pool. |
+| `dhcp-reserve-del ID` | Delete a reservation by `_OBJ_InstID` (full path or bare suffix `2`). `-y` to skip confirmation. |
 | `dhcp6` | DHCPv6 server + Router Advertisement state. |
 | `ipv6-prefix` | DHCPv6-PD pool + static IPv6 prefixes. |
 | `dns` | DNS config + bound hostnames (DHCP + manual). |
