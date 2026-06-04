@@ -741,6 +741,41 @@ class ZTEH388XAPI:
             fields=fields,
         )
 
+    # --- DHCPv4 static reservations write actions ---
+    # Same prefixed-ParaName convention as port-forwarding (the form
+    # template renders <input id="OBJ_DHCPBIND_ID.Name:DHCPStaticRule">
+    # and the colonStripping rule strips the suffix on submit).
+    _DHCP_BIND_PREFIX = "OBJ_DHCPBIND_ID"
+
+    def add_dhcp_reservation(
+        self, mac: str, ip_address: str, name: str
+    ) -> Tuple[bool, str]:
+        """Create a static DHCPv4 lease (POST ``IF_ACTION=Apply`` +
+        ``_OBJ_InstID=-1``).
+
+        Active leases on other MACs are not disrupted; the modem only
+        enforces the binding at the next renewal of the target client.
+        """
+        fields = self._prefixed(self._DHCP_BIND_PREFIX, {
+            "_OBJ_InstID": "-1",
+            "Name": name,
+            "IPAddr": ip_address,
+            "MACAddr": mac,
+        })
+        return self._post_action(
+            self.DHCP_VIEW_URL, self.DHCP_BINDINGS_URL,
+            action="Apply", fields=fields,
+        )
+
+    def del_dhcp_reservation(self, inst_id: str) -> Tuple[bool, str]:
+        """Delete a DHCPv4 reservation by its ``_OBJ_InstID``
+        (e.g. ``DEV.V4DP.Sr.Pl1.Bd1``)."""
+        fields = self._prefixed(self._DHCP_BIND_PREFIX, {"_OBJ_InstID": inst_id})
+        return self._post_action(
+            self.DHCP_VIEW_URL, self.DHCP_BINDINGS_URL,
+            action="Delete", fields=fields,
+        )
+
     # ------------------------------------------------------------------- DNS
 
     def get_dns_local(self, retry: bool = True) -> Dict[str, str]:

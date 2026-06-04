@@ -376,3 +376,68 @@ def test_del_port_forwarding_rule_uses_delete_action(api):
     # Defensive: must not regress to the wrong short form.
     assert "IF_ACTION=Del&" not in sent and not sent.endswith("IF_ACTION=Del")
     assert "OBJ_FWPM_ID._OBJ_InstID=DEV.NAT.PtMapping7" in sent
+
+
+# --- DHCPv4 reservations write actions -------------------------------------
+
+@responses.activate
+def test_add_dhcp_reservation_uses_apply_with_inst_id_minus_one(api):
+    """New reservations submit ``IF_ACTION=Apply`` +
+    ``OBJ_DHCPBIND_ID._OBJ_InstID=-1`` with prefixed Name/IPAddr/MACAddr,
+    matching the ``OBJ_DHCPBIND_ID.X:DHCPStaticRule`` form ids the
+    modem's ``colonStripping()`` JS rewrites on submit."""
+    view = f"{HOST}{api.DHCP_VIEW_URL}"
+    data = f"{HOST}{api.DHCP_BINDINGS_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "FRESH-TOKEN"}, status=200,
+    )
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+    ok, _ = api.add_dhcp_reservation(
+        mac="AA:BB:CC:DD:EE:FF",
+        ip_address="192.168.1.200",
+        name="my-laptop",
+    )
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "IF_ACTION=Apply" in sent
+    assert "OBJ_DHCPBIND_ID._OBJ_InstID=-1" in sent
+    assert "OBJ_DHCPBIND_ID.Name=my-laptop" in sent
+    assert "OBJ_DHCPBIND_ID.IPAddr=192.168.1.200" in sent
+    # MAC ":" url-encoded as %3A by requests; assert prefix + value parts.
+    assert "OBJ_DHCPBIND_ID.MACAddr=" in sent
+    assert "AA%3ABB%3ACC%3ADD%3AEE%3AFF" in sent
+    # No bare (unprefixed) leak of the ParaNames.
+    assert "&Name=my-laptop" not in sent
+    assert "&IPAddr=" not in sent
+
+
+@responses.activate
+def test_del_dhcp_reservation_uses_delete_action(api):
+    """Delete posts ``IF_ACTION=Delete`` with the prefixed instance id."""
+    view = f"{HOST}{api.DHCP_VIEW_URL}"
+    data = f"{HOST}{api.DHCP_BINDINGS_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "FRESH-TOKEN"}, status=200,
+    )
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+    ok, _ = api.del_dhcp_reservation("DEV.V4DP.Sr.Pl1.Bd1")
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "IF_ACTION=Delete" in sent
+    assert "IF_ACTION=Del&" not in sent and not sent.endswith("IF_ACTION=Del")
+    # url-encoded "." stays "." in form bodies, no escape needed.
+    assert "OBJ_DHCPBIND_ID._OBJ_InstID=DEV.V4DP.Sr.Pl1.Bd1" in sent
