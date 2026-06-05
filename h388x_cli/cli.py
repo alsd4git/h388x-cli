@@ -2363,6 +2363,114 @@ def firewall_urlfilter(
         api.close()
 
 
+# URL-filter rules get instance ids shaped ``DEV.FW.CHAIN1.URLF<N>``.
+# Accept a bare suffix and expand it, like the other write commands.
+_FWURL_ID_PREFIX = "DEV.FW.CHAIN1.URLF"
+
+
+@app.command("firewall-urlfilter-add")
+def firewall_urlfilter_add(
+    name: str = typer.Argument(..., help="Rule label (1–32 ASCII chars)."),
+    url: str = typer.Argument(..., help="URL/host to block (1–128 chars)."),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Add a URL-filter rule (master toggle is in ``firewall``)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        ok, body = api.add_url_filter_rule(name=name, url=url)
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Add failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+
+        rows = api.get_firewall_urlfilter()
+        new_rows = [r for r in rows if r.get("Url") == url and r.get("Name") == name]
+        if state.json:
+            _emit_json({"ok": True, "added": new_rows})
+            return
+        if new_rows:
+            r = new_rows[-1]
+            console.print(
+                f"[green]Added[/green] URL filter "
+                f"[bold]{r.get('_OBJ_InstID') or '?'}[/bold]: "
+                f"([cyan]{r.get('Name')}[/cyan]) → {r.get('Url')}"
+            )
+        else:
+            console.print(
+                f"[green]Added[/green] URL filter [cyan]{name}[/cyan] "
+                f"(modem returned SUCC but no matching row read back)."
+            )
+    finally:
+        api.close()
+
+
+@app.command("firewall-urlfilter-del")
+def firewall_urlfilter_del(
+    rule_id: str = typer.Argument(
+        ...,
+        help=(
+            "Rule _OBJ_InstID. Either the bare suffix (e.g. '1') or the "
+            "full path 'DEV.FW.CHAIN1.URLF1' (as shown by `h388x firewall-urlfilter`)."
+        ),
+    ),
+    yes: bool = typer.Option(
+        False, "-y", "--yes", help="Skip the confirmation prompt."
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Delete a URL-filter rule by ID."""
+    inst_id = (
+        rule_id
+        if rule_id.startswith(_FWURL_ID_PREFIX)
+        else f"{_FWURL_ID_PREFIX}{rule_id}"
+    )
+    api = get_api(host, user, password, insecure)
+    try:
+        rows = api.get_firewall_urlfilter()
+        target = next((r for r in rows if r.get("_OBJ_InstID") == inst_id), None)
+        if target is None:
+            if state.json:
+                _emit_json({"ok": False, "error": f"rule {inst_id!r} not found"})
+            else:
+                console.print(f"[red]No URL filter with id[/red] [bold]{inst_id}[/bold].")
+            raise typer.Exit(code=1)
+
+        if not yes and not state.json:
+            console.print(
+                f"About to delete [bold]{inst_id}[/bold]: "
+                f"([cyan]{target.get('Name')}[/cyan]) → {target.get('Url')}"
+            )
+            if not typer.confirm("Proceed?"):
+                console.print("[yellow]Aborted.[/yellow]")
+                raise typer.Exit(code=1)
+
+        ok, body = api.del_url_filter_rule(inst_id)
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Delete failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+        if state.json:
+            _emit_json({"ok": True, "deleted": inst_id})
+        else:
+            console.print(f"[green]Deleted[/green] URL filter [bold]{inst_id}[/bold].")
+    finally:
+        api.close()
+
+
 # ------------------------------------------------------------- parental-control
 
 @app.command("parental-control")
