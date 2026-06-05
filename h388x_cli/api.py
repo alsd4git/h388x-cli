@@ -1168,6 +1168,39 @@ class ZTEH388XAPI:
             "OBJ_FWURL_ID", retry,
         )
 
+    # --- Firewall URL-filter write actions ---
+    # Same prefixed-ParaName + Apply/-1 convention. The filterCriteria
+    # view renders <input id="OBJ_FWURL_ID.Name:URLFilter"> /
+    # ".Url:URLFilter"; colonStripping() drops the suffix on submit.
+    # Client-side validation: Name 1..32 ASCII, Url 1..128 (url format).
+    _FWURL_PREFIX = "OBJ_FWURL_ID"
+
+    def add_url_filter_rule(self, name: str, url: str) -> Tuple[bool, str]:
+        """Create a URL-filter rule (POST ``IF_ACTION=Apply`` +
+        ``_OBJ_InstID=-1``).
+
+        Only blocks the given URL; existing routes are untouched. The
+        master URL-filter toggle lives in the ``firewall`` view and must
+        be on for the rule to take effect.
+        """
+        fields = self._prefixed(self._FWURL_PREFIX, {
+            "_OBJ_InstID": "-1",
+            "Name": name,
+            "Url": url,
+        })
+        return self._post_action(
+            self.FILTER_CRITERIA_VIEW_URL, self.FW_URLFILTER_URL,
+            action="Apply", fields=fields,
+        )
+
+    def del_url_filter_rule(self, inst_id: str) -> Tuple[bool, str]:
+        """Delete a URL-filter rule by its ``_OBJ_InstID``."""
+        fields = self._prefixed(self._FWURL_PREFIX, {"_OBJ_InstID": inst_id})
+        return self._post_action(
+            self.FILTER_CRITERIA_VIEW_URL, self.FW_URLFILTER_URL,
+            action="Delete", fields=fields,
+        )
+
     def get_parental_control(self, retry: bool = True) -> List[Dict[str, str]]:
         """Return parental-control entries (OBJ_PARENT_CONTROL_ID).
 

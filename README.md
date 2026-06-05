@@ -60,6 +60,8 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 | `port-forward-del ID` | Delete a NAT rule by `_OBJ_InstID` (full path or bare suffix `9`). `-y` to skip confirmation. |
 | `firewall-ipfilter` | User-defined IP-filter rules + priority slot. |
 | `firewall-urlfilter` | Per-URL filter rules (master toggle in `firewall`). |
+| `firewall-urlfilter-add NAME URL` | Add a URL-filter rule (Name 1–32 ASCII, URL 1–128). Needs the master URL filter on in `firewall`. |
+| `firewall-urlfilter-del ID` | Delete a URL-filter rule by `_OBJ_InstID` (full path or bare suffix `1`). `-y` to skip confirmation. |
 | `parental-control` | Parental-control MAC+schedule bindings. |
 
 ### Services

@@ -441,3 +441,58 @@ def test_del_dhcp_reservation_uses_delete_action(api):
     assert "IF_ACTION=Del&" not in sent and not sent.endswith("IF_ACTION=Del")
     # url-encoded "." stays "." in form bodies, no escape needed.
     assert "OBJ_DHCPBIND_ID._OBJ_InstID=DEV.V4DP.Sr.Pl1.Bd1" in sent
+
+
+# --- firewall URL-filter write actions -------------------------------------
+
+@responses.activate
+def test_add_url_filter_rule_uses_apply_with_inst_id_minus_one(api):
+    """New URL-filter rows submit ``IF_ACTION=Apply`` +
+    ``OBJ_FWURL_ID._OBJ_InstID=-1`` with prefixed Name/Url fields."""
+    view = f"{HOST}{api.FILTER_CRITERIA_VIEW_URL}"
+    data = f"{HOST}{api.FW_URLFILTER_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "FRESH-TOKEN"}, status=200,
+    )
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+    ok, _ = api.add_url_filter_rule(name="block-x", url="example.com")
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "IF_ACTION=Apply" in sent
+    assert "OBJ_FWURL_ID._OBJ_InstID=-1" in sent
+    assert "OBJ_FWURL_ID.Name=block-x" in sent
+    assert "OBJ_FWURL_ID.Url=example.com" in sent
+    # no bare ParaName leak
+    assert "&Name=block-x" not in sent
+    assert "&Url=example.com" not in sent
+
+
+@responses.activate
+def test_del_url_filter_rule_uses_delete_action(api):
+    """Delete posts ``IF_ACTION=Delete`` with the prefixed instance id."""
+    view = f"{HOST}{api.FILTER_CRITERIA_VIEW_URL}"
+    data = f"{HOST}{api.FW_URLFILTER_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "FRESH-TOKEN"}, status=200,
+    )
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+    ok, _ = api.del_url_filter_rule("DEV.FW.CHAIN1.URLF1")
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "IF_ACTION=Delete" in sent
+    assert "IF_ACTION=Del&" not in sent and not sent.endswith("IF_ACTION=Del")
+    assert "OBJ_FWURL_ID._OBJ_InstID=DEV.FW.CHAIN1.URLF1" in sent
