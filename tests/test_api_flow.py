@@ -496,3 +496,76 @@ def test_del_url_filter_rule_uses_delete_action(api):
     assert "IF_ACTION=Delete" in sent
     assert "IF_ACTION=Del&" not in sent and not sent.endswith("IF_ACTION=Del")
     assert "OBJ_FWURL_ID._OBJ_InstID=DEV.FW.CHAIN1.URLF1" in sent
+
+
+# --- firewall IP-filter write actions --------------------------------------
+
+@responses.activate
+def test_add_ip_filter_rule_uses_apply_with_inst_id_minus_one(api):
+    """New IP-filter rows submit ``IF_ACTION=Apply`` +
+    ``OBJ_FWIP_ID._OBJ_InstID=-1``. Protocol keyword maps to its number
+    and is mirrored into both S_Protocol (UI helper) and Protocol."""
+    view = f"{HOST}{api.FILTER_CRITERIA_VIEW_URL}"
+    data = f"{HOST}{api.FW_IPFILTER_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "FRESH-TOKEN"}, status=200,
+    )
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+    ok, _ = api.add_ip_filter_rule(name="blk", protocol="tcp", target="deny")
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "IF_ACTION=Apply" in sent
+    assert "OBJ_FWIP_ID._OBJ_InstID=-1" in sent
+    assert "OBJ_FWIP_ID.Name=blk" in sent
+    # tcp -> 6, mirrored into both helper + stored field
+    assert "OBJ_FWIP_ID.Protocol=6" in sent
+    assert "OBJ_FWIP_ID.S_Protocol=6" in sent
+    # deny -> FilterTarget 0
+    assert "OBJ_FWIP_ID.FilterTarget=0" in sent
+    # enabled by default
+    assert "OBJ_FWIP_ID.Enable=1" in sent
+
+
+def test_add_ip_filter_rejects_invalid_protocol(api):
+    """Protocol validation runs client-side; no HTTP traffic."""
+    ok, body = api.add_ip_filter_rule(name="x", protocol="GRE")
+    assert ok is False
+    assert "ICMP/TCP/UDP" in body
+
+
+def test_add_ip_filter_rejects_invalid_target(api):
+    """Target validation runs client-side; no HTTP traffic."""
+    ok, body = api.add_ip_filter_rule(name="x", protocol="tcp", target="maybe")
+    assert ok is False
+    assert "allow/deny" in body
+
+
+@responses.activate
+def test_del_ip_filter_rule_uses_delete_action(api):
+    """Delete posts ``IF_ACTION=Delete`` with the prefixed instance id."""
+    view = f"{HOST}{api.FILTER_CRITERIA_VIEW_URL}"
+    data = f"{HOST}{api.FW_IPFILTER_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "FRESH-TOKEN"}, status=200,
+    )
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+    ok, _ = api.del_ip_filter_rule("DEV.FW.CHAIN1.IPF1")
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "IF_ACTION=Delete" in sent
+    assert "IF_ACTION=Del&" not in sent and not sent.endswith("IF_ACTION=Del")
+    assert "OBJ_FWIP_ID._OBJ_InstID=DEV.FW.CHAIN1.IPF1" in sent

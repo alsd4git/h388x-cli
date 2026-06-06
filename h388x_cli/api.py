@@ -1201,6 +1201,94 @@ class ZTEH388XAPI:
             action="Delete", fields=fields,
         )
 
+    # --- Firewall IP-filter write actions ---
+    # filterCriteria view renders many <input id="OBJ_FWIP_ID.X:IPFilter">.
+    # Server-side required: Name (1..32 ASCII), FilterIndex (1..20),
+    # Protocol (1..255). ``S_Protocol`` is a UI-only helper (not stored;
+    # comes back empty on read), but the WebUI still submits it so we
+    # mirror that. ``FilterTarget`` default is 1=allow in the form, which
+    # is the safe default (an allow rule never blocks existing traffic).
+    _FWIP_PREFIX = "OBJ_FWIP_ID"
+    _IP_PROTO_MAP = {"ICMP": "1", "TCP": "6", "UDP": "17"}
+
+    def add_ip_filter_rule(
+        self,
+        name: str,
+        protocol: str,
+        *,
+        target: str = "allow",
+        filter_index: int = 1,
+        enable: bool = True,
+        ip_version: str = "4",
+        source_ip: str = "",
+        source_mask: str = "",
+        dest_ip: str = "",
+        dest_mask: str = "",
+        min_src_port: str = "",
+        max_src_port: str = "",
+        min_dst_port: str = "",
+        max_dst_port: str = "",
+        in_iface: str = "",
+        out_iface: str = "",
+        dscp: str = "",
+    ) -> Tuple[bool, str]:
+        """Create an IP-filter rule (POST ``IF_ACTION=Apply`` +
+        ``_OBJ_InstID=-1``).
+
+        ``protocol`` is ``ICMP``/``TCP``/``UDP`` (case-insensitive) or a
+        raw 1..255 number. ``target`` is ``allow`` (default, safe) or
+        ``deny``. The modem normalises ``filter_index`` (1..20) to the
+        next free slot. Empty IP/port/interface fields mean "any".
+        """
+        proto = protocol.upper()
+        proto_num = self._IP_PROTO_MAP.get(proto)
+        if proto_num is None:
+            if proto.isdigit() and 1 <= int(proto) <= 255:
+                proto_num = proto
+            else:
+                return False, (
+                    f"protocol must be ICMP/TCP/UDP or 1-255 (got {protocol!r})"
+                )
+        tgt = {"allow": "1", "permit": "1", "deny": "0", "drop": "0"}.get(
+            target.lower()
+        )
+        if tgt is None:
+            return False, f"target must be allow/deny (got {target!r})"
+        fields = self._prefixed(self._FWIP_PREFIX, {
+            "_OBJ_InstID": "-1",
+            "Enable": "1" if enable else "0",
+            "Name": name,
+            "FilterTarget": tgt,
+            "FilterIndex": str(filter_index),
+            "IPVersion": ip_version,
+            "SourceIP": source_ip,
+            "SourceIPMask": source_mask,
+            "DestIP": dest_ip,
+            "DestIPMask": dest_mask,
+            "S_Protocol": proto_num,
+            "Protocol": proto_num,
+            "MinSrcPort": min_src_port,
+            "MaxSrcPort": max_src_port,
+            "MinDstPort": min_dst_port,
+            "MaxDstPort": max_dst_port,
+            "INCViewName": in_iface,
+            "OUTCViewName": out_iface,
+            "DSCP": dscp,
+        })
+        return self._post_action(
+            self.FILTER_CRITERIA_VIEW_URL, self.FW_IPFILTER_URL,
+            action="Apply", fields=fields,
+        )
+
+    def del_ip_filter_rule(self, inst_id: str) -> Tuple[bool, str]:
+        """Delete an IP-filter rule by its ``_OBJ_InstID``
+        (e.g. ``DEV.FW.CHAIN1.IPF1``)."""
+        fields = self._prefixed(self._FWIP_PREFIX, {"_OBJ_InstID": inst_id})
+        return self._post_action(
+            self.FILTER_CRITERIA_VIEW_URL, self.FW_IPFILTER_URL,
+            action="Delete", fields=fields,
+        )
+
     def get_parental_control(self, retry: bool = True) -> List[Dict[str, str]]:
         """Return parental-control entries (OBJ_PARENT_CONTROL_ID).
 
