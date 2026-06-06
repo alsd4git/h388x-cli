@@ -2471,6 +2471,148 @@ def firewall_urlfilter_del(
         api.close()
 
 
+# IP-filter rules get instance ids shaped ``DEV.FW.CHAIN1.IPF<N>``.
+_FWIP_ID_PREFIX = "DEV.FW.CHAIN1.IPF"
+
+
+@app.command("firewall-ipfilter-add")
+def firewall_ipfilter_add(
+    name: str = typer.Argument(..., help="Rule label (1–32 ASCII chars)."),
+    protocol: str = typer.Argument(
+        ..., help="ICMP | TCP | UDP (case-insensitive) or a raw 1–255 number."
+    ),
+    target: str = typer.Option(
+        "allow", "--target",
+        help="allow (default, never blocks traffic) or deny.",
+    ),
+    index: int = typer.Option(
+        1, "--index", min=1, max=20, help="Rule priority slot (1–20)."
+    ),
+    disable: bool = typer.Option(
+        False, "--disable", help="Create the rule disabled (defaults to enabled)."
+    ),
+    ip_version: str = typer.Option(
+        "4", "--ip-version", help="IP version: 4, 6, or -1 (any).",
+    ),
+    src_ip: str = typer.Option("", "--src-ip", help="Source IP (empty = any)."),
+    src_mask: str = typer.Option("", "--src-mask", help="Source IP mask/prefix."),
+    dst_ip: str = typer.Option("", "--dst-ip", help="Destination IP (empty = any)."),
+    dst_mask: str = typer.Option("", "--dst-mask", help="Destination IP mask/prefix."),
+    src_port_min: str = typer.Option("", "--src-port-min", help="Source port range start."),
+    src_port_max: str = typer.Option("", "--src-port-max", help="Source port range end."),
+    dst_port_min: str = typer.Option("", "--dst-port-min", help="Dest port range start."),
+    dst_port_max: str = typer.Option("", "--dst-port-max", help="Dest port range end."),
+    dscp: str = typer.Option("", "--dscp", help="DSCP value (0–63)."),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Add an IP-filter rule. Default action is allow (safe)."""
+    api = get_api(host, user, password, insecure)
+    try:
+        ok, body = api.add_ip_filter_rule(
+            name=name, protocol=protocol, target=target,
+            filter_index=index, enable=not disable, ip_version=ip_version,
+            source_ip=src_ip, source_mask=src_mask,
+            dest_ip=dst_ip, dest_mask=dst_mask,
+            min_src_port=src_port_min, max_src_port=src_port_max,
+            min_dst_port=dst_port_min, max_dst_port=dst_port_max,
+            dscp=dscp,
+        )
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Add failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+
+        rows = api.get_firewall_ipfilter().get("rules", [])
+        new_rows = [r for r in rows if r.get("Name") == name]
+        if state.json:
+            _emit_json({"ok": True, "added": new_rows})
+            return
+        if new_rows:
+            r = new_rows[-1]
+            act = "allow" if r.get("FilterTarget") == "1" else "deny"
+            console.print(
+                f"[green]Added[/green] IP filter "
+                f"[bold]{r.get('_OBJ_InstID') or '?'}[/bold]: "
+                f"([cyan]{r.get('Name')}[/cyan]) {act} proto={r.get('Protocol')} "
+                f"{'enabled' if r.get('Enable') == '1' else 'disabled'}"
+            )
+        else:
+            console.print(
+                f"[green]Added[/green] IP filter [cyan]{name}[/cyan] "
+                f"(modem returned SUCC but no matching row read back)."
+            )
+    finally:
+        api.close()
+
+
+@app.command("firewall-ipfilter-del")
+def firewall_ipfilter_del(
+    rule_id: str = typer.Argument(
+        ...,
+        help=(
+            "Rule _OBJ_InstID. Either the bare suffix (e.g. '1') or the "
+            "full path 'DEV.FW.CHAIN1.IPF1' (as shown by `h388x firewall-ipfilter`)."
+        ),
+    ),
+    yes: bool = typer.Option(
+        False, "-y", "--yes", help="Skip the confirmation prompt."
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Delete an IP-filter rule by ID."""
+    inst_id = (
+        rule_id
+        if rule_id.startswith(_FWIP_ID_PREFIX)
+        else f"{_FWIP_ID_PREFIX}{rule_id}"
+    )
+    api = get_api(host, user, password, insecure)
+    try:
+        rows = api.get_firewall_ipfilter().get("rules", [])
+        target = next((r for r in rows if r.get("_OBJ_InstID") == inst_id), None)
+        if target is None:
+            if state.json:
+                _emit_json({"ok": False, "error": f"rule {inst_id!r} not found"})
+            else:
+                console.print(f"[red]No IP filter with id[/red] [bold]{inst_id}[/bold].")
+            raise typer.Exit(code=1)
+
+        if not yes and not state.json:
+            act = "allow" if target.get("FilterTarget") == "1" else "deny"
+            console.print(
+                f"About to delete [bold]{inst_id}[/bold]: "
+                f"([cyan]{target.get('Name')}[/cyan]) {act} proto={target.get('Protocol')}"
+            )
+            if not typer.confirm("Proceed?"):
+                console.print("[yellow]Aborted.[/yellow]")
+                raise typer.Exit(code=1)
+
+        ok, body = api.del_ip_filter_rule(inst_id)
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Delete failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+        if state.json:
+            _emit_json({"ok": True, "deleted": inst_id})
+        else:
+            console.print(f"[green]Deleted[/green] IP filter [bold]{inst_id}[/bold].")
+    finally:
+        api.close()
+
+
 # ------------------------------------------------------------- parental-control
 
 @app.command("parental-control")
