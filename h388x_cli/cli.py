@@ -828,6 +828,73 @@ def port_forward_del(
         api.close()
 
 
+@app.command("port-forward-toggle")
+def port_forward_toggle(
+    rule_id: str = typer.Argument(
+        ...,
+        help=(
+            "Rule _OBJ_InstID. Bare suffix (e.g. '7') or full path "
+            "'DEV.NAT.PtMapping7'."
+        ),
+    ),
+    enable: Optional[bool] = typer.Option(
+        None, "--on/--off",
+        help="Force enabled (--on) or disabled (--off). Default: flip current.",
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Enable/disable a port-forwarding rule (keeps all other fields)."""
+    inst_id = (
+        rule_id
+        if rule_id.startswith("DEV.NAT.PtMapping")
+        else f"DEV.NAT.PtMapping{rule_id}"
+    )
+    api = get_api(host, user, password, insecure)
+    try:
+        rows = api.get_port_forwarding_rules()
+        target = next((r for r in rows if r.get("_OBJ_InstID") == inst_id), None)
+        if target is None:
+            if state.json:
+                _emit_json({"ok": False, "error": f"rule {inst_id!r} not found"})
+            else:
+                console.print(f"[red]No rule with id[/red] [bold]{inst_id}[/bold].")
+            raise typer.Exit(code=1)
+
+        currently_on = target.get("Enable") == "1"
+        new_state = (not currently_on) if enable is None else enable
+        if new_state == currently_on:
+            if state.json:
+                _emit_json({"ok": True, "id": inst_id, "enabled": currently_on, "changed": False})
+            else:
+                console.print(
+                    f"[yellow]Rule [bold]{inst_id}[/bold] already "
+                    f"{'enabled' if currently_on else 'disabled'}.[/yellow]"
+                )
+            return
+
+        ok, body = api.set_port_forwarding_enabled(inst_id, new_state)
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Toggle failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+        if state.json:
+            _emit_json({"ok": True, "id": inst_id, "enabled": new_state, "changed": True})
+        else:
+            console.print(
+                f"[green]{'Enabled' if new_state else 'Disabled'}[/green] "
+                f"port-forward [bold]{inst_id}[/bold]."
+            )
+    finally:
+        api.close()
+
+
 # ------------------------------------------------------------------------ dns
 
 @app.command()
@@ -2609,6 +2676,73 @@ def firewall_ipfilter_del(
             _emit_json({"ok": True, "deleted": inst_id})
         else:
             console.print(f"[green]Deleted[/green] IP filter [bold]{inst_id}[/bold].")
+    finally:
+        api.close()
+
+
+@app.command("firewall-ipfilter-toggle")
+def firewall_ipfilter_toggle(
+    rule_id: str = typer.Argument(
+        ...,
+        help=(
+            "Rule _OBJ_InstID. Bare suffix (e.g. '1') or full path "
+            "'DEV.FW.CHAIN1.IPF1'."
+        ),
+    ),
+    enable: Optional[bool] = typer.Option(
+        None, "--on/--off",
+        help="Force enabled (--on) or disabled (--off). Default: flip current.",
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Enable/disable an IP-filter rule (keeps all other fields)."""
+    inst_id = (
+        rule_id
+        if rule_id.startswith(_FWIP_ID_PREFIX)
+        else f"{_FWIP_ID_PREFIX}{rule_id}"
+    )
+    api = get_api(host, user, password, insecure)
+    try:
+        rows = api.get_firewall_ipfilter().get("rules", [])
+        target = next((r for r in rows if r.get("_OBJ_InstID") == inst_id), None)
+        if target is None:
+            if state.json:
+                _emit_json({"ok": False, "error": f"rule {inst_id!r} not found"})
+            else:
+                console.print(f"[red]No IP filter with id[/red] [bold]{inst_id}[/bold].")
+            raise typer.Exit(code=1)
+
+        currently_on = target.get("Enable") == "1"
+        new_state = (not currently_on) if enable is None else enable
+        if new_state == currently_on:
+            if state.json:
+                _emit_json({"ok": True, "id": inst_id, "enabled": currently_on, "changed": False})
+            else:
+                console.print(
+                    f"[yellow]Rule [bold]{inst_id}[/bold] already "
+                    f"{'enabled' if currently_on else 'disabled'}.[/yellow]"
+                )
+            return
+
+        ok, body = api.set_ip_filter_enabled(inst_id, new_state)
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Toggle failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+        if state.json:
+            _emit_json({"ok": True, "id": inst_id, "enabled": new_state, "changed": True})
+        else:
+            console.print(
+                f"[green]{'Enabled' if new_state else 'Disabled'}[/green] "
+                f"IP filter [bold]{inst_id}[/bold]."
+            )
     finally:
         api.close()
 
