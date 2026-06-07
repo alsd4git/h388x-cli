@@ -569,3 +569,59 @@ def test_del_ip_filter_rule_uses_delete_action(api):
     assert "IF_ACTION=Delete" in sent
     assert "IF_ACTION=Del&" not in sent and not sent.endswith("IF_ACTION=Del")
     assert "OBJ_FWIP_ID._OBJ_InstID=DEV.FW.CHAIN1.IPF1" in sent
+
+
+# --- enable/disable toggle (light InstSwitch) ------------------------------
+
+@responses.activate
+def test_set_port_forwarding_enabled_sends_only_enable_and_instid(api):
+    """The on/off toggle must submit ``IF_ACTION=Apply`` with just the
+    Enable flag + the real InstID (no other fields), so the modem keeps
+    the rest of the row intact."""
+    view = f"{HOST}{api.PORT_FORWARDING_VIEW_URL}"
+    data = f"{HOST}{api.PORT_FORWARDING_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "FRESH-TOKEN"}, status=200,
+    )
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+    ok, _ = api.set_port_forwarding_enabled("DEV.NAT.PtMapping7", True)
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "IF_ACTION=Apply" in sent
+    assert "OBJ_FWPM_ID.Enable=1" in sent
+    assert "OBJ_FWPM_ID._OBJ_InstID=DEV.NAT.PtMapping7" in sent
+    # must NOT resend other fields (light InstSwitch, not full edit)
+    assert "OBJ_FWPM_ID.Protocol" not in sent
+    assert "OBJ_FWPM_ID.Description" not in sent
+
+
+@responses.activate
+def test_set_ip_filter_enabled_off_sends_enable_zero(api):
+    """Disabling posts Enable=0 + the prefixed InstID for IP filters."""
+    view = f"{HOST}{api.FILTER_CRITERIA_VIEW_URL}"
+    data = f"{HOST}{api.FW_IPFILTER_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(
+        responses.GET, login,
+        json={"sess_token": "FRESH-TOKEN"}, status=200,
+    )
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+    ok, _ = api.set_ip_filter_enabled("DEV.FW.CHAIN1.IPF1", False)
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "IF_ACTION=Apply" in sent
+    assert "OBJ_FWIP_ID.Enable=0" in sent
+    assert "OBJ_FWIP_ID._OBJ_InstID=DEV.FW.CHAIN1.IPF1" in sent
+    assert "OBJ_FWIP_ID.Protocol" not in sent

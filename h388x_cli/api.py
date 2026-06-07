@@ -675,6 +675,25 @@ class ZTEH388XAPI:
     def _prefixed(prefix: str, fields: Dict[str, str]) -> Dict[str, str]:
         return {f"{prefix}.{k}": v for k, v in fields.items()}
 
+    def _set_rule_enabled(
+        self, view_url: str, data_url: str, prefix: str,
+        inst_id: str, enable: bool,
+    ) -> Tuple[bool, str]:
+        """Flip an instance's ``Enable`` flag via the light ``InstSwitch``
+        POST the WebUI uses for the on/off toggle in list views.
+
+        Unlike a full edit this only submits ``Enable`` + the real
+        ``_OBJ_InstID`` (still ``IF_ACTION=Apply``); the modem preserves
+        every other field of the row. Verified live on port-forwarding.
+        """
+        fields = self._prefixed(prefix, {
+            "Enable": "1" if enable else "0",
+            "_OBJ_InstID": inst_id,
+        })
+        return self._post_action(
+            view_url, data_url, action="Apply", fields=fields,
+        )
+
     def add_port_forwarding_rule(
         self,
         description: str,
@@ -739,6 +758,16 @@ class ZTEH388XAPI:
             self.PORT_FORWARDING_URL,
             action="Delete",
             fields=fields,
+        )
+
+    def set_port_forwarding_enabled(
+        self, inst_id: str, enable: bool,
+    ) -> Tuple[bool, str]:
+        """Enable/disable a port-forwarding rule without editing its
+        other fields (light ``InstSwitch`` toggle)."""
+        return self._set_rule_enabled(
+            self.PORT_FORWARDING_VIEW_URL, self.PORT_FORWARDING_URL,
+            self._PFWD_PREFIX, inst_id, enable,
         )
 
     # --- DHCPv4 static reservations write actions ---
@@ -1287,6 +1316,16 @@ class ZTEH388XAPI:
         return self._post_action(
             self.FILTER_CRITERIA_VIEW_URL, self.FW_IPFILTER_URL,
             action="Delete", fields=fields,
+        )
+
+    def set_ip_filter_enabled(
+        self, inst_id: str, enable: bool,
+    ) -> Tuple[bool, str]:
+        """Enable/disable an IP-filter rule without editing its other
+        fields (light ``InstSwitch`` toggle)."""
+        return self._set_rule_enabled(
+            self.FILTER_CRITERIA_VIEW_URL, self.FW_IPFILTER_URL,
+            self._FWIP_PREFIX, inst_id, enable,
         )
 
     def get_parental_control(self, retry: bool = True) -> List[Dict[str, str]]:

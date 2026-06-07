@@ -58,9 +58,11 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 | `port-forward` | Configured NAT/port-forwarding rules. |
 | `port-forward-add DESC PROTO EXT_PORT INTERNAL_IP` | Create a NAT rule. Options: `--int-port`, `--ext-port-end`, `--remote-host[-end]`, `--disable`. |
 | `port-forward-del ID` | Delete a NAT rule by `_OBJ_InstID` (full path or bare suffix `9`). `-y` to skip confirmation. |
+| `port-forward-toggle ID` | Enable/disable a NAT rule (keeps all other fields). `--on`/`--off` to force; default flips current. |
 | `firewall-ipfilter` | User-defined IP-filter rules + priority slot. |
 | `firewall-ipfilter-add NAME PROTO` | Add an IP-filter rule. `PROTO` = ICMP/TCP/UDP or 1–255. Options: `--target allow\|deny` (default allow), `--index`, `--disable`, `--ip-version`, `--src-ip/--src-mask`, `--dst-ip/--dst-mask`, `--src-port-min/max`, `--dst-port-min/max`, `--dscp`. |
 | `firewall-ipfilter-del ID` | Delete an IP-filter rule by `_OBJ_InstID` (full path or bare suffix `1`). `-y` to skip confirmation. |
+| `firewall-ipfilter-toggle ID` | Enable/disable an IP-filter rule (keeps all other fields). `--on`/`--off` to force; default flips current. |
 | `firewall-urlfilter` | Per-URL filter rules (master toggle in `firewall`). |
 | `firewall-urlfilter-add NAME URL` | Add a URL-filter rule (Name 1–32 ASCII, URL 1–128). Needs the master URL filter on in `firewall`. |
 | `firewall-urlfilter-del ID` | Delete a URL-filter rule by `_OBJ_InstID` (full path or bare suffix `1`). `-y` to skip confirmation. |
