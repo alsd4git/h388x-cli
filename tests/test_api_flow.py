@@ -625,3 +625,77 @@ def test_set_ip_filter_enabled_off_sends_enable_zero(api):
     assert "OBJ_FWIP_ID.Enable=0" in sent
     assert "OBJ_FWIP_ID._OBJ_InstID=DEV.FW.CHAIN1.IPF1" in sent
     assert "OBJ_FWIP_ID.Protocol" not in sent
+
+
+# --- full port-forward edit ------------------------------------------------
+
+_PFWD_ROW = {
+    "_OBJ_InstID": "DEV.NAT.PtMapping7",
+    "Enable": "1",
+    "Description": "ssh",
+    "Protocol": "TCP",
+    "ExternalPort": "22",
+    "ExternalPortEndRange": "22",
+    "InternalClient": "192.168.1.50",
+    "InternalPort": "22",
+    "RemoteHost": "0.0.0.0",
+    "RemoteHostEndRange": "0.0.0.0",
+}
+
+
+def _mock_pfwd_read_then_post(api, row):
+    """Mock the read (menuView+menuData) the edit does first, plus the
+    token refresh + POST."""
+    view = f"{HOST}{api.PORT_FORWARDING_VIEW_URL}"
+    data = f"{HOST}{api.PORT_FORWARDING_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+    # build an XML row the parser understands
+    cells = "".join(f"<ParaName>{k}</ParaName><ParaValue>{v}</ParaValue>"
+                    for k, v in row.items())
+    xml = (
+        "<ajax_response_xml_root><OBJ_FWPM_ID><Instance>"
+        f"{cells}</Instance></OBJ_FWPM_ID></ajax_response_xml_root>"
+    )
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(responses.GET, data, body=xml, status=200)
+    responses.add(responses.GET, login, json={"sess_token": "FRESH-TOKEN"}, status=200)
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+
+@responses.activate
+def test_edit_port_forwarding_overrides_only_given_fields(api):
+    """A partial edit keeps untouched fields from the current row and
+    re-posts a full Apply with the real InstID (not -1)."""
+    _mock_pfwd_read_then_post(api, _PFWD_ROW)
+
+    ok, _ = api.edit_port_forwarding_rule(
+        "DEV.NAT.PtMapping7", external_port=2222, internal_port=22,
+    )
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "IF_ACTION=Apply" in sent
+    # real InstID, not the "new" marker
+    assert "OBJ_FWPM_ID._OBJ_InstID=DEV.NAT.PtMapping7" in sent
+    assert "OBJ_FWPM_ID._OBJ_InstID=-1" not in sent
+    # changed field
+    assert "OBJ_FWPM_ID.ExternalPort=2222" in sent
+    # untouched fields preserved from the read-back row
+    assert "OBJ_FWPM_ID.Description=ssh" in sent
+    assert "OBJ_FWPM_ID.Protocol=TCP" in sent
+    assert "OBJ_FWPM_ID.InternalClient=192.168.1.50" in sent
+
+
+@responses.activate
+def test_edit_port_forwarding_unknown_id_fails_without_post(api):
+    """Editing a missing rule returns an error and issues no POST."""
+    view = f"{HOST}{api.PORT_FORWARDING_VIEW_URL}"
+    data = f"{HOST}{api.PORT_FORWARDING_URL}"
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(responses.GET, data, body="<root/>", status=200)
+
+    ok, msg = api.edit_port_forwarding_rule("DEV.NAT.PtMapping99", protocol="UDP")
+    assert ok is False
+    assert "not found" in msg
+    assert not [c for c in responses.calls if c.request.method == "POST"]
