@@ -895,6 +895,106 @@ def port_forward_toggle(
         api.close()
 
 
+@app.command("port-forward-edit")
+def port_forward_edit(
+    rule_id: str = typer.Argument(
+        ...,
+        help=(
+            "Rule _OBJ_InstID. Bare suffix (e.g. '7') or full path "
+            "'DEV.NAT.PtMapping7'."
+        ),
+    ),
+    description: Optional[str] = typer.Option(None, "--desc", help="New rule name."),
+    protocol: Optional[str] = typer.Option(
+        None, "--protocol", help="New protocol: TCP | UDP | BOTH."
+    ),
+    external_port: Optional[int] = typer.Option(
+        None, "--ext-port", min=1, max=65535, help="New WAN port."
+    ),
+    external_port_end: Optional[int] = typer.Option(
+        None, "--ext-port-end", min=1, max=65535, help="New end of WAN port range."
+    ),
+    internal_client: Optional[str] = typer.Option(
+        None, "--client", help="New LAN IPv4 target."
+    ),
+    internal_port: Optional[int] = typer.Option(
+        None, "--int-port", min=1, max=65535, help="New LAN port."
+    ),
+    remote_host: Optional[str] = typer.Option(
+        None, "--remote-host", help='New source IP restriction ("0.0.0.0" = any).'
+    ),
+    remote_host_end: Optional[str] = typer.Option(
+        None, "--remote-host-end", help="New end of source IP range."
+    ),
+    enable: Optional[bool] = typer.Option(
+        None, "--on/--off", help="Also enable/disable the rule."
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Edit fields of an existing port-forwarding rule (only the flags
+    you pass are changed; everything else is kept)."""
+    inst_id = (
+        rule_id
+        if rule_id.startswith("DEV.NAT.PtMapping")
+        else f"DEV.NAT.PtMapping{rule_id}"
+    )
+    if all(
+        v is None for v in (
+            description, protocol, external_port, external_port_end,
+            internal_client, internal_port, remote_host, remote_host_end, enable,
+        )
+    ):
+        console.print("[yellow]Nothing to change (pass at least one field).[/yellow]")
+        raise typer.Exit(code=1)
+
+    api = get_api(host, user, password, insecure)
+    try:
+        ok, body = api.edit_port_forwarding_rule(
+            inst_id,
+            description=description, protocol=protocol,
+            external_port=external_port, external_port_end=external_port_end,
+            internal_client=internal_client, internal_port=internal_port,
+            remote_host=remote_host, remote_host_end=remote_host_end,
+            enable=enable,
+        )
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Edit failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+
+        rows = api.get_port_forwarding_rules()
+        updated = next((r for r in rows if r.get("_OBJ_InstID") == inst_id), None)
+        if state.json:
+            _emit_json({
+                "ok": True,
+                "updated": PortForwardingRule.model_validate(updated).model_dump()
+                if updated else None,
+            })
+            return
+        if updated:
+            r = PortForwardingRule.model_validate(updated)
+            console.print(
+                f"[green]Updated[/green] port-forward [bold]{inst_id}[/bold]: "
+                f"{r.protocol} {r.external_port} → "
+                f"{r.internal_client}:{r.internal_port}  ([cyan]{r.description}[/cyan]) "
+                f"{'enabled' if r.enabled else 'disabled'}"
+            )
+        else:
+            console.print(
+                f"[green]Updated[/green] [bold]{inst_id}[/bold] "
+                f"(modem returned SUCC but no matching row read back)."
+            )
+    finally:
+        api.close()
+
+
 # ------------------------------------------------------------------------ dns
 
 @app.command()

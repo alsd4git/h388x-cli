@@ -770,6 +770,68 @@ class ZTEH388XAPI:
             self._PFWD_PREFIX, inst_id, enable,
         )
 
+    def edit_port_forwarding_rule(
+        self,
+        inst_id: str,
+        *,
+        description: Optional[str] = None,
+        protocol: Optional[str] = None,
+        external_port: Optional[int] = None,
+        internal_client: Optional[str] = None,
+        internal_port: Optional[int] = None,
+        external_port_end: Optional[int] = None,
+        remote_host: Optional[str] = None,
+        remote_host_end: Optional[str] = None,
+        enable: Optional[bool] = None,
+    ) -> Tuple[bool, str]:
+        """Edit an existing port-forwarding rule (full ``IF_ACTION=Apply``
+        with the real ``_OBJ_InstID``).
+
+        Reads the current row first and only overrides the fields passed
+        as non-``None``; everything else is resubmitted unchanged, so a
+        partial edit never clobbers untouched fields. Returns
+        ``(False, msg)`` if the rule id is unknown or protocol invalid.
+        """
+        current = next(
+            (r for r in self.get_port_forwarding_rules()
+             if r.get("_OBJ_InstID") == inst_id),
+            None,
+        )
+        if current is None:
+            return False, f"rule {inst_id!r} not found"
+
+        if protocol is not None:
+            proto = protocol.upper()
+            if proto not in {"TCP", "UDP", "BOTH"}:
+                return False, f"protocol must be TCP/UDP/BOTH (got {protocol!r})"
+        else:
+            proto = current.get("Protocol", "TCP")
+
+        def _pick(new: object, key: str) -> str:
+            return str(new) if new is not None else current.get(key, "")
+
+        if enable is None:
+            enable_val = current.get("Enable", "1")
+        else:
+            enable_val = "1" if enable else "0"
+
+        fields = self._prefixed(self._PFWD_PREFIX, {
+            "_OBJ_InstID": inst_id,
+            "Enable": enable_val,
+            "Description": _pick(description, "Description"),
+            "Protocol": proto,
+            "ExternalPort": _pick(external_port, "ExternalPort"),
+            "ExternalPortEndRange": _pick(external_port_end, "ExternalPortEndRange"),
+            "InternalClient": _pick(internal_client, "InternalClient"),
+            "InternalPort": _pick(internal_port, "InternalPort"),
+            "RemoteHost": _pick(remote_host, "RemoteHost"),
+            "RemoteHostEndRange": _pick(remote_host_end, "RemoteHostEndRange"),
+        })
+        return self._post_action(
+            self.PORT_FORWARDING_VIEW_URL, self.PORT_FORWARDING_URL,
+            action="Apply", fields=fields,
+        )
+
     # --- DHCPv4 static reservations write actions ---
     # Same prefixed-ParaName convention as port-forwarding (the form
     # template renders <input id="OBJ_DHCPBIND_ID.Name:DHCPStaticRule">
