@@ -36,6 +36,7 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 | `dhcp6` | DHCPv6 server + Router Advertisement state. |
 | `ipv6-prefix` | DHCPv6-PD pool + static IPv6 prefixes. |
 | `dns` | DNS config + bound hostnames (DHCP + manual). |
+| `dns-set DNS1` | Set the DNS servers handed to LAN clients via DHCP. `--dns2`, or `--from-wan` for the ISP DNS. Existing leases keep old DNS until renewal (non-disruptive). |
 | `edns0` | EDNS0 client-subnet toggle. |
 | `public-lan` | Secondary "public LAN" interface (hotspot/guest IP slot). |
 
