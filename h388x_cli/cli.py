@@ -1052,6 +1052,67 @@ def dns(
         api.close()
 
 
+@app.command("dns-set")
+def dns_set(
+    dns1: Optional[str] = typer.Argument(
+        None, help="Primary DNS server pushed to LAN clients via DHCP."
+    ),
+    dns2: Optional[str] = typer.Option(
+        None, "--dns2", help="Secondary DNS server (optional)."
+    ),
+    from_wan: bool = typer.Option(
+        False, "--from-wan",
+        help="Use the ISP-provided DNS instead of manual servers (ignores DNS1).",
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Set the DNS servers handed to LAN clients via DHCP.
+
+    This is the resolver the LAN actually uses. Existing leases keep
+    their old DNS until renewal, so the live connection is not dropped.
+    IP/pool/lease settings are preserved (read-modify-write).
+    """
+    if not from_wan and not dns1:
+        console.print("[red]Provide DNS1, or use --from-wan.[/red]")
+        raise typer.Exit(code=1)
+    api = get_api(host, user, password, insecure)
+    try:
+        before = api.get_dhcp_config()
+        ok, body = api.set_dhcp_dns(dns1=dns1, dns2=dns2, from_wan=from_wan)
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Set failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+        after = api.get_dhcp_config()
+        if state.json:
+            _emit_json({
+                "ok": True,
+                "before": {"dns1": before.get("DNSServer1"), "dns2": before.get("DNSServer2"),
+                           "source": before.get("DnsServerSource")},
+                "after": {"dns1": after.get("DNSServer1"), "dns2": after.get("DNSServer2"),
+                          "source": after.get("DnsServerSource")},
+            })
+            return
+        if after.get("DnsServerSource") == "1":
+            console.print("[green]DNS source set to[/green] [bold]ISP / from WAN[/bold].")
+        else:
+            console.print(
+                f"[green]DNS push updated[/green]: "
+                f"[bold]{after.get('DNSServer1')}[/bold] / "
+                f"[bold]{after.get('DNSServer2')}[/bold] "
+                f"(was {before.get('DNSServer1')} / {before.get('DNSServer2')})"
+            )
+    finally:
+        api.close()
+
+
 # ------------------------------------------------------------------ mac-table
 
 @app.command("mac-table")

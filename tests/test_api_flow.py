@@ -699,3 +699,71 @@ def test_edit_port_forwarding_unknown_id_fails_without_post(api):
     assert ok is False
     assert "not found" in msg
     assert not [c for c in responses.calls if c.request.method == "POST"]
+
+
+# --- DHCP-pushed DNS set ---------------------------------------------------
+
+_DHCP_CFG_ROW = {
+    "_InstID": "IGD",
+    "DNSServer1": "192.168.1.200",
+    "DNSServer2": "192.168.1.201",
+    "SubMask": "255.255.255.0",
+    "IPAddr": "192.168.1.1",
+    "DnsServerSource": "0",
+    "MaxAddress": "192.168.1.200",
+    "SubnetMask": "255.255.255.0",
+    "LeaseTime": "86400",
+    "ServerEnable": "1",
+    "MinAddress": "192.168.1.10",
+}
+
+
+def _mock_dhcp_cfg_read_then_post(api, row):
+    view = f"{HOST}{api.DHCP_VIEW_URL}"
+    data = f"{HOST}{api.DHCP_CONFIG_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+    cells = "".join(f"<ParaName>{k}</ParaName><ParaValue>{v}</ParaValue>"
+                    for k, v in row.items())
+    xml = (
+        "<ajax_response_xml_root><OBJ_Br0AndDhcpsHosCfg_ID><Instance>"
+        f"{cells}</Instance></OBJ_Br0AndDhcpsHosCfg_ID></ajax_response_xml_root>"
+    )
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(responses.GET, data, body=xml, status=200)
+    responses.add(responses.GET, login, json={"sess_token": "FRESH-TOKEN"}, status=200)
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+
+@responses.activate
+def test_set_dhcp_dns_swaps_only_dns_keeps_pool(api):
+    """Setting DNS must preserve every other DHCP field (pool/lease/IP)
+    and force DnsServerSource=0 (manual)."""
+    _mock_dhcp_cfg_read_then_post(api, _DHCP_CFG_ROW)
+
+    ok, _ = api.set_dhcp_dns(dns1="1.1.1.1", dns2="1.0.0.1")
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "IF_ACTION=Apply" in sent
+    assert "DNSServer1=1.1.1.1" in sent
+    assert "DNSServer2=1.0.0.1" in sent
+    assert "DnsServerSource=0" in sent
+    # untouched fields resubmitted verbatim
+    assert "MinAddress=192.168.1.10" in sent
+    assert "MaxAddress=192.168.1.200" in sent
+    assert "LeaseTime=86400" in sent
+    assert "IPAddr=192.168.1.1" in sent
+
+
+@responses.activate
+def test_set_dhcp_dns_from_wan_sets_source_one(api):
+    """--from-wan flips DnsServerSource to 1 without needing servers."""
+    _mock_dhcp_cfg_read_then_post(api, _DHCP_CFG_ROW)
+
+    ok, _ = api.set_dhcp_dns(from_wan=True)
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "DnsServerSource=1" in sent

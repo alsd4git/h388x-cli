@@ -939,6 +939,42 @@ class ZTEH388XAPI:
         )
         return rows[0] if rows else {}
 
+    def set_dhcp_dns(
+        self,
+        dns1: Optional[str] = None,
+        dns2: Optional[str] = None,
+        from_wan: Optional[bool] = None,
+    ) -> Tuple[bool, str]:
+        """Set the DNS servers handed to LAN clients via DHCP.
+
+        This is the resolver the LAN actually uses (the modem's own
+        ``dns_local`` SerIPAddress is not editable in the WebUI). It's a
+        single-instance scalar config: we read the full current row and
+        re-POST ``IF_ACTION=Apply`` with only the DNS fields changed, so
+        IP/pool/lease/mask are preserved verbatim.
+
+        ``from_wan=True`` flips ``DnsServerSource`` to 1 (use the ISP
+        DNS, ignoring dns1/dns2). Otherwise the source is forced to 0
+        (manual) and dns1/dns2 are applied. Existing leases keep their
+        old DNS until renewal, so this never drops the live connection.
+        """
+        cur = self.get_dhcp_config()
+        if not cur:
+            return False, "could not read current DHCP config"
+        fields = dict(cur)
+        if from_wan:
+            fields["DnsServerSource"] = "1"
+        else:
+            fields["DnsServerSource"] = "0"
+            if dns1 is not None:
+                fields["DNSServer1"] = dns1
+            if dns2 is not None:
+                fields["DNSServer2"] = dns2
+        return self._post_action(
+            self.DHCP_VIEW_URL, self.DHCP_CONFIG_URL,
+            action="Apply", fields=fields,
+        )
+
     def get_dhcp_bindings(self, retry: bool = True) -> List[Dict[str, str]]:
         """Return DHCPv4 reservations / static bindings (OBJ_DHCPBIND_ID)."""
         return self._menudata(
