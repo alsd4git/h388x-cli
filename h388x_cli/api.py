@@ -867,6 +867,48 @@ class ZTEH388XAPI:
             action="Delete", fields=fields,
         )
 
+    def edit_dhcp_reservation(
+        self,
+        inst_id: str,
+        *,
+        name: Optional[str] = None,
+        ip_address: Optional[str] = None,
+        mac: Optional[str] = None,
+    ) -> Tuple[bool, str]:
+        """Edit an existing DHCPv4 reservation (full ``IF_ACTION=Apply``
+        with the real ``_OBJ_InstID``).
+
+        Read-modify-write, mirroring ``edit_port_forwarding_rule``: reads
+        the current row first and only overrides the fields passed as
+        non-``None``; the rest is resubmitted unchanged so a partial edit
+        never clobbers untouched fields. Returns ``(False, msg)`` if the
+        binding id is unknown.
+
+        Note the live constraint inherited from add: the IP must stay
+        inside the DHCP pool or the modem replies ``IF_ERRORID=-257``.
+        """
+        current = next(
+            (r for r in self.get_dhcp_bindings()
+             if r.get("_OBJ_InstID") == inst_id),
+            None,
+        )
+        if current is None:
+            return False, f"binding {inst_id!r} not found"
+
+        def _pick(new: object, key: str) -> str:
+            return str(new) if new is not None else current.get(key, "")
+
+        fields = self._prefixed(self._DHCP_BIND_PREFIX, {
+            "_OBJ_InstID": inst_id,
+            "Name": _pick(name, "Name"),
+            "IPAddr": _pick(ip_address, "IPAddr"),
+            "MACAddr": _pick(mac, "MACAddr"),
+        })
+        return self._post_action(
+            self.DHCP_VIEW_URL, self.DHCP_BINDINGS_URL,
+            action="Apply", fields=fields,
+        )
+
     # ------------------------------------------------------------------- DNS
 
     def get_dns_local(self, retry: bool = True) -> Dict[str, str]:
