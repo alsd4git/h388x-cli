@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.live import Live
 from rich.table import Table
+from rich.text import Text
 
 from .api import ZTEH388XAPI
 from .discovery import Spider
@@ -1550,6 +1551,149 @@ def dhcp_reserve_del(
             console.print(
                 f"[green]Deleted[/green] reservation [bold]{inst_id}[/bold]."
             )
+    finally:
+        api.close()
+
+
+# -------------------------------------------------------------------- devices
+
+# Device-naming feature (route A): DHCP reservations (MAC -> fixed IP + Name)
+# are the primary, MAC-keyed naming layer. The ``devices`` view merges the
+# currently-connected clients (LAN + Wi-Fi) with the static reservations,
+# keyed by MAC, so the observed DHCP hostname and the assigned reservation
+# name stay visually distinct.
+
+devices_app = typer.Typer(
+    help=(
+        "Device naming (DHCP reservations, MAC-keyed). Bare `devices` lists "
+        "connected clients merged with reservations."
+    ),
+    no_args_is_help=False,
+)
+app.add_typer(devices_app, name="devices")
+
+
+def _norm_mac(mac: Optional[str]) -> str:
+    """Normalize a MAC for use as a merge key (lower-case, no spaces)."""
+    return (mac or "").strip().lower()
+
+
+def _merge_devices(
+    clients: List[Client],
+    bindings: List[DhcpBinding],
+) -> List[Dict[str, Any]]:
+    """Merge connected clients with DHCP reservations, keyed by MAC.
+
+    Each row exposes both the observed DHCP hostname and the assigned
+    reservation name so the route-A distinction stays explicit. Devices
+    that have a reservation but are not currently connected still show up
+    (online=False), as do connected devices without a reservation.
+    """
+    merged: Dict[str, Dict[str, Any]] = {}
+
+    for c in clients:
+        key = _norm_mac(c.mac)
+        if not key:
+            continue
+        row = merged.setdefault(key, {
+            "mac": c.mac,
+            "hostname": None,
+            "ipv4": None,
+            "ipv6": None,
+            "interface": None,
+            "online": False,
+            "reserved": False,
+            "name": None,
+            "reserved_ip": None,
+            "reservation_id": None,
+        })
+        row["online"] = True
+        row["hostname"] = c.hostname or row["hostname"]
+        row["ipv4"] = c.ipv4 or row["ipv4"]
+        row["ipv6"] = c.ipv6 or row["ipv6"]
+        row["interface"] = c.interface or row["interface"]
+
+    for b in bindings:
+        key = _norm_mac(b.mac)
+        if not key:
+            continue
+        row = merged.setdefault(key, {
+            "mac": b.mac,
+            "hostname": None,
+            "ipv4": None,
+            "ipv6": None,
+            "interface": None,
+            "online": False,
+            "reserved": False,
+            "name": None,
+            "reserved_ip": None,
+            "reservation_id": None,
+        })
+        row["reserved"] = True
+        row["name"] = b.name or row["name"]
+        row["reserved_ip"] = b.ip_address or row["reserved_ip"]
+        row["reservation_id"] = b.id or row["reservation_id"]
+        # If the device isn't currently connected we still have an IP to show.
+        if not row["ipv4"]:
+            row["ipv4"] = b.ip_address
+
+    return list(merged.values())
+
+
+@devices_app.callback(invoke_without_command=True)
+def devices_main(
+    ctx: typer.Context,
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """List connected devices (LAN + Wi-Fi) merged with DHCP reservations."""
+    if ctx.invoked_subcommand is not None:
+        return
+
+    api = get_api(host, user, password, insecure)
+    try:
+        clients = (
+            [Client.model_validate(r) for r in api.get_lan_clients()]
+            + [Client.model_validate(r) for r in api.get_wifi_clients()]
+        )
+        bindings = [DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings()]
+        rows = _merge_devices(clients, bindings)
+
+        if state.json:
+            _emit_json(sorted(rows, key=lambda r: r.get("ipv4") or ""))
+            return
+
+        table = Table(title=f"Devices ({len(rows)})")
+        table.add_column("Name", style="cyan")
+        table.add_column("Hostname (DHCP)", style="dim")
+        table.add_column("IPv4", style="green")
+        table.add_column("MAC")
+        table.add_column("Interface", style="yellow")
+        table.add_column("Online")
+        table.add_column("Reserved")
+
+        for r in sorted(rows, key=lambda r: r.get("ipv4") or ""):
+            online = "[green]yes[/green]" if r["online"] else "[red]no[/red]"
+            reserved = "[green]yes[/green]" if r["reserved"] else "[dim]no[/dim]"
+            # MACs contain segments like ``:ab:``/``:cd:`` that rich would
+            # treat as emoji shortcodes; render as plain Text so they show
+            # verbatim.
+            table.add_row(
+                r["name"] or "-",
+                r["hostname"] or "-",
+                r["ipv4"] or "-",
+                Text(r["mac"] or "-"),
+                r["interface"] or "-",
+                online,
+                reserved,
+            )
+        console.print(table)
+        console.print(
+            "[dim]Tip: 'Name' = assigned reservation, 'Hostname' = "
+            "observed via DHCP (read-only).[/dim]"
+        )
     finally:
         api.close()
 
