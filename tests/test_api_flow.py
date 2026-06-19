@@ -443,6 +443,68 @@ def test_del_dhcp_reservation_uses_delete_action(api):
     assert "OBJ_DHCPBIND_ID._OBJ_InstID=DEV.V4DP.Sr.Pl1.Bd1" in sent
 
 
+_DHCP_BIND_ROW = {
+    "_OBJ_InstID": "DEV.V4DP.Sr.Pl1.Bd1",
+    "Name": "old-name",
+    "IPAddr": "192.168.1.50",
+    "MACAddr": "AA:BB:CC:DD:EE:FF",
+}
+
+
+def _mock_dhcp_bind_read_then_post(api, row):
+    """Mock the read (menuView+menuData) the edit does first, plus the
+    token refresh + POST for OBJ_DHCPBIND_ID."""
+    view = f"{HOST}{api.DHCP_VIEW_URL}"
+    data = f"{HOST}{api.DHCP_BINDINGS_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+    cells = "".join(f"<ParaName>{k}</ParaName><ParaValue>{v}</ParaValue>"
+                    for k, v in row.items())
+    xml = (
+        "<ajax_response_xml_root><OBJ_DHCPBIND_ID><Instance>"
+        f"{cells}</Instance></OBJ_DHCPBIND_ID></ajax_response_xml_root>"
+    )
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(responses.GET, data, body=xml, status=200)
+    responses.add(responses.GET, login, json={"sess_token": "FRESH-TOKEN"}, status=200)
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+
+
+@responses.activate
+def test_edit_dhcp_reservation_overrides_only_given_fields(api):
+    """A partial edit keeps untouched fields from the current row and
+    re-posts a full Apply with the real InstID (not -1)."""
+    _mock_dhcp_bind_read_then_post(api, _DHCP_BIND_ROW)
+
+    ok, _ = api.edit_dhcp_reservation("DEV.V4DP.Sr.Pl1.Bd1", name="new-name")
+    assert ok is True
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    sent = post.request.body
+    assert "IF_ACTION=Apply" in sent
+    # real InstID, not the "new" marker
+    assert "OBJ_DHCPBIND_ID._OBJ_InstID=DEV.V4DP.Sr.Pl1.Bd1" in sent
+    assert "OBJ_DHCPBIND_ID._OBJ_InstID=-1" not in sent
+    # changed field
+    assert "OBJ_DHCPBIND_ID.Name=new-name" in sent
+    # untouched fields preserved from the read-back row
+    assert "OBJ_DHCPBIND_ID.IPAddr=192.168.1.50" in sent
+    assert "AA%3ABB%3ACC%3ADD%3AEE%3AFF" in sent
+
+
+@responses.activate
+def test_edit_dhcp_reservation_unknown_id_fails_without_post(api):
+    """Editing a missing reservation returns an error and issues no POST."""
+    view = f"{HOST}{api.DHCP_VIEW_URL}"
+    data = f"{HOST}{api.DHCP_BINDINGS_URL}"
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(responses.GET, data, body="<root/>", status=200)
+
+    ok, msg = api.edit_dhcp_reservation("DEV.V4DP.Sr.Pl1.Bd9", name="x")
+    assert ok is False
+    assert "not found" in msg
+    assert not [c for c in responses.calls if c.request.method == "POST"]
+
+
 # --- firewall URL-filter write actions -------------------------------------
 
 @responses.activate
