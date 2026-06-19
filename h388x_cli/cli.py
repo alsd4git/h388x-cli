@@ -1914,6 +1914,153 @@ def devices_import(
         api.close()
 
 
+@devices_app.command("set")
+def devices_set(
+    mac: str = typer.Argument(..., help="Client MAC address."),
+    name: str = typer.Argument(..., help="Friendly name to assign."),
+    ip_address: Optional[str] = typer.Option(
+        None, "--ip",
+        help=(
+            "IPv4 to reserve (must be in the DHCP pool). Required only when "
+            "no reservation exists yet and the device's current IP can't be "
+            "discovered."
+        ),
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Assign a name to a device by MAC (edit reservation, or add one).
+
+    If a reservation already exists for the MAC, only its name (and IP if
+    ``--ip`` is given) is updated. Otherwise a new reservation is created;
+    the IP comes from ``--ip`` or, if omitted, from the device's currently
+    observed DHCP address.
+    """
+    key = _norm_mac(mac)
+    api = get_api(host, user, password, insecure)
+    try:
+        existing = next(
+            (b for b in (DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings())
+             if _norm_mac(b.mac) == key),
+            None,
+        )
+
+        if existing is not None:
+            ok, body = api.edit_dhcp_reservation(
+                existing.id, name=name, ip_address=ip_address,
+            )
+            action = "updated"
+            target_ip = ip_address or existing.ip_address
+        else:
+            target_ip = ip_address
+            if not target_ip:
+                # Discover the device's current IP from connected clients.
+                clients = (
+                    [Client.model_validate(r) for r in api.get_lan_clients()]
+                    + [Client.model_validate(r) for r in api.get_wifi_clients()]
+                )
+                match = next(
+                    (c for c in clients if _norm_mac(c.mac) == key and c.ipv4), None
+                )
+                target_ip = match.ipv4 if match else None
+            if not target_ip:
+                msg = (
+                    "no reservation for this MAC and could not discover its "
+                    "current IP; pass --ip <addr in DHCP pool>"
+                )
+                if state.json:
+                    _emit_json({"ok": False, "error": msg})
+                else:
+                    console.print(f"[red]{msg}[/red]")
+                raise typer.Exit(code=1)
+            ok, body = api.add_dhcp_reservation(
+                mac=mac, ip_address=target_ip, name=name,
+            )
+            action = "added"
+
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Set failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+
+        if state.json:
+            _emit_json({
+                "ok": True, "action": action,
+                "mac": mac, "ip": target_ip, "name": name,
+            })
+        else:
+            console.print(
+                f"[green]{action.capitalize()}[/green] reservation "
+                f"([cyan]{name}[/cyan]) → {target_ip}"
+            )
+            console.print(f"  MAC: {mac}", markup=False, emoji=False)
+    finally:
+        api.close()
+
+
+@devices_app.command("clear")
+def devices_clear(
+    mac: str = typer.Argument(..., help="Client MAC address."),
+    yes: bool = typer.Option(
+        False, "-y", "--yes", help="Skip the confirmation prompt.",
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Remove the DHCP reservation (and its name) for a device by MAC."""
+    key = _norm_mac(mac)
+    api = get_api(host, user, password, insecure)
+    try:
+        existing = next(
+            (b for b in (DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings())
+             if _norm_mac(b.mac) == key),
+            None,
+        )
+        if existing is None:
+            msg = f"no reservation found for MAC {mac!r}"
+            if state.json:
+                _emit_json({"ok": False, "error": msg})
+            else:
+                console.print(msg, style="red", markup=False, emoji=False)
+            raise typer.Exit(code=1)
+
+        if not yes and not state.json:
+            console.print(
+                f"About to delete [bold]{existing.id}[/bold]: "
+                f"([cyan]{existing.name or '-'}[/cyan]) → {existing.ip_address or '-'}"
+            )
+            console.print(f"  MAC: {existing.mac or mac}", markup=False, emoji=False)
+            if not typer.confirm("Proceed?"):
+                console.print("[yellow]Aborted.[/yellow]")
+                raise typer.Exit(code=1)
+
+        ok, body = api.del_dhcp_reservation(existing.id)
+        if not ok:
+            if state.json:
+                _emit_json({"ok": False, "raw": body[:400]})
+            else:
+                console.print(
+                    f"[red]Clear failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                )
+            raise typer.Exit(code=1)
+        if state.json:
+            _emit_json({"ok": True, "deleted": existing.id, "mac": mac})
+        else:
+            console.print(
+                f"[green]Cleared[/green] reservation [bold]{existing.id}[/bold]."
+            )
+    finally:
+        api.close()
+
+
 # ---------------------------------------------------------------------- dhcp6
 
 @app.command()
