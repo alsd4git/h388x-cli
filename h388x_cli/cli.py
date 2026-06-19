@@ -1744,6 +1744,176 @@ def devices_export(
         _emit_json(data)
 
 
+def _plan_import(
+    entries: List[Dict[str, Any]],
+    bindings: List[DhcpBinding],
+) -> List[Dict[str, Any]]:
+    """Compute the idempotent import plan keyed by MAC.
+
+    For each ``{mac, ip, name}`` entry, decide the action against the
+    current reservations:
+    - ``add``       — no reservation exists for that MAC,
+    - ``edit``      — a reservation exists but name and/or IP differ,
+    - ``unchanged`` — reservation already matches (idempotent no-op),
+    - ``error``     — malformed entry (missing MAC, or missing IP on add).
+
+    Returns one plan dict per entry; never deletes (pruning is out of
+    scope, use ``devices clear`` for removals).
+    """
+    by_mac = {_norm_mac(b.mac): b for b in bindings if b.mac}
+    plan: List[Dict[str, Any]] = []
+
+    for e in entries:
+        mac = (e.get("mac") or "").strip()
+        ip = (e.get("ip") or "").strip()
+        name = (e.get("name") or "").strip()
+        key = _norm_mac(mac)
+
+        item: Dict[str, Any] = {
+            "mac": mac, "ip": ip, "name": name,
+            "id": None, "old_name": None, "old_ip": None,
+        }
+
+        if not key:
+            item["action"] = "error"
+            item["error"] = "missing mac"
+            plan.append(item)
+            continue
+
+        existing = by_mac.get(key)
+        if existing is None:
+            if not ip:
+                item["action"] = "error"
+                item["error"] = "missing ip for new reservation"
+            else:
+                item["action"] = "add"
+            plan.append(item)
+            continue
+
+        item["id"] = existing.id
+        item["old_name"] = existing.name or ""
+        item["old_ip"] = existing.ip_address or ""
+        # An empty IP in the import keeps the current reservation IP.
+        target_ip = ip or (existing.ip_address or "")
+        item["ip"] = target_ip
+        if (existing.name or "") == name and (existing.ip_address or "") == target_ip:
+            item["action"] = "unchanged"
+        else:
+            item["action"] = "edit"
+        plan.append(item)
+
+    return plan
+
+
+@devices_app.command("import")
+def devices_import(
+    file: str = typer.Argument(
+        ..., help="JSON file with [{mac, ip, name}] entries to apply."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run",
+        help="Show the diff without writing anything to the modem.",
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Apply reservation names from a JSON file, idempotently.
+
+    Adds missing reservations and edits names/IPs that differ; existing
+    matching reservations are left untouched. Never deletes. Use
+    ``--dry-run`` to preview the plan.
+    """
+    try:
+        with open(file, "r", encoding="utf-8") as fh:
+            entries = json.load(fh)
+    except (OSError, json.JSONDecodeError) as exc:
+        if state.json:
+            _emit_json({"ok": False, "error": f"cannot read {file!r}: {exc}"})
+        else:
+            console.print(f"[red]Cannot read[/red] [bold]{file}[/bold]: {exc}")
+        raise typer.Exit(code=1)
+
+    if not isinstance(entries, list):
+        if state.json:
+            _emit_json({"ok": False, "error": "JSON root must be a list"})
+        else:
+            console.print("[red]JSON root must be a list of {mac, ip, name}.[/red]")
+        raise typer.Exit(code=1)
+
+    api = get_api(host, user, password, insecure)
+    try:
+        bindings = [DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings()]
+        plan = _plan_import(entries, bindings)
+
+        if not dry_run:
+            for item in plan:
+                if item["action"] == "add":
+                    ok, body = api.add_dhcp_reservation(
+                        mac=item["mac"], ip_address=item["ip"], name=item["name"],
+                    )
+                    item["ok"] = ok
+                    if not ok:
+                        item["raw"] = body[:200]
+                elif item["action"] == "edit":
+                    ok, body = api.edit_dhcp_reservation(
+                        item["id"], name=item["name"], ip_address=item["ip"],
+                    )
+                    item["ok"] = ok
+                    if not ok:
+                        item["raw"] = body[:200]
+
+        if state.json:
+            _emit_json({"ok": True, "dry_run": dry_run, "plan": plan})
+            return
+
+        table = Table(
+            title=f"Import plan ({'dry-run' if dry_run else 'applied'})"
+        )
+        table.add_column("Action")
+        table.add_column("Name", style="cyan")
+        table.add_column("IP", style="green")
+        table.add_column("MAC")
+        table.add_column("Detail", style="dim")
+
+        colors = {
+            "add": "green", "edit": "yellow",
+            "unchanged": "dim", "error": "red",
+        }
+        for item in plan:
+            action = item["action"]
+            color = colors.get(action, "white")
+            if action == "edit":
+                detail = f"was: {item['old_name'] or '-'} / {item['old_ip'] or '-'}"
+            elif action == "error":
+                detail = item.get("error", "")
+            else:
+                detail = ""
+            if not dry_run and "ok" in item and not item["ok"]:
+                action = f"{action} FAILED"
+                color = "red"
+                detail = item.get("raw", detail)
+            table.add_row(
+                f"[{color}]{action}[/{color}]",
+                item["name"] or "-",
+                item["ip"] or "-",
+                Text(item["mac"] or "-"),
+                detail,
+            )
+        console.print(table)
+        n_add = sum(1 for i in plan if i["action"] == "add")
+        n_edit = sum(1 for i in plan if i["action"] == "edit")
+        n_same = sum(1 for i in plan if i["action"] == "unchanged")
+        n_err = sum(1 for i in plan if i["action"] == "error")
+        console.print(
+            f"[dim]add={n_add} edit={n_edit} unchanged={n_same} error={n_err}"
+            + ("  (dry-run, nothing written)" if dry_run else "") + "[/dim]"
+        )
+    finally:
+        api.close()
+
+
 # ---------------------------------------------------------------------- dhcp6
 
 @app.command()
