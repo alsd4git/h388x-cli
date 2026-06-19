@@ -1698,6 +1698,52 @@ def devices_main(
         api.close()
 
 
+def _reservations_export(bindings: List[DhcpBinding]) -> List[Dict[str, str]]:
+    """Build the portable ``[{mac, ip, name}]`` export from reservations.
+
+    Only reservations with a MAC are exported (MAC is the route-A key).
+    Sorted by IP for stable, diff-friendly output.
+    """
+    out = [
+        {"mac": b.mac, "ip": b.ip_address or "", "name": b.name or ""}
+        for b in bindings
+        if b.mac
+    ]
+    return sorted(out, key=lambda r: r["ip"])
+
+
+@devices_app.command("export")
+def devices_export(
+    file: Optional[str] = typer.Argument(
+        None,
+        help="Output file. Writes to stdout when omitted.",
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Export DHCP reservations as portable JSON ``[{mac, ip, name}]``."""
+    api = get_api(host, user, password, insecure)
+    try:
+        bindings = [DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings()]
+        data = _reservations_export(bindings)
+    finally:
+        api.close()
+
+    if file:
+        with open(file, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2)
+            fh.write("\n")
+        if not state.json:
+            console.print(
+                f"[green]Exported[/green] {len(data)} reservation(s) to "
+                f"[bold]{file}[/bold]."
+            )
+    else:
+        _emit_json(data)
+
+
 # ---------------------------------------------------------------------- dhcp6
 
 @app.command()
