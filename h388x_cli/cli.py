@@ -2061,6 +2061,122 @@ def devices_clear(
         api.close()
 
 
+@devices_app.command("edit")
+def devices_edit(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Interactively name devices one by one (reservations, route A).
+
+    Walks the merged device list and prompts per device:
+    - press Enter to keep the current name,
+    - type a name to set/rename (creates a reservation using the device's
+      observed IP when none exists yet),
+    - type ``-`` to clear an existing reservation.
+
+    Nothing is written until you confirm the summary at the end.
+    """
+    if state.json:
+        console.print(
+            "[red]`devices edit` is interactive and does not support --json.[/red]"
+        )
+        raise typer.Exit(code=1)
+
+    api = get_api(host, user, password, insecure)
+    try:
+        clients = (
+            [Client.model_validate(r) for r in api.get_lan_clients()]
+            + [Client.model_validate(r) for r in api.get_wifi_clients()]
+        )
+        bindings = [DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings()]
+        rows = sorted(_merge_devices(clients, bindings), key=lambda r: r.get("ipv4") or "")
+
+        console.print("[bold]Interactive device naming[/bold] (route A: DHCP reservations)")
+        console.print(
+            "[dim]Enter = keep · type a name to set/rename · '-' = clear · "
+            "Ctrl-C = abort[/dim]\n"
+        )
+
+        # Each action: (kind, row, new_name) where kind in add/edit/clear.
+        actions: List[tuple] = []
+        for r in rows:
+            current = r["name"] or ""
+            online = "[green]online[/green]" if r["online"] else "[red]offline[/red]"
+            reserved = "reserved" if r["reserved"] else "no-reservation"
+            console.print(
+                f"[green]{r['ipv4'] or '-'}[/green]  "
+                f"name=[cyan]{current or '-'}[/cyan]  "
+                f"dhcp=[dim]{r['hostname'] or '-'}[/dim]  "
+                f"{online}  [dim]{reserved}[/dim]"
+            )
+            console.print(f"  MAC {r['mac'] or '-'}", markup=False, emoji=False)
+
+            ans = typer.prompt("  name", default=current, show_default=True).strip()
+
+            if ans == current:
+                continue  # unchanged
+            if ans == "-":
+                if r["reserved"]:
+                    actions.append(("clear", r, None))
+                else:
+                    console.print("  [dim](nothing to clear)[/dim]")
+                continue
+            if r["reserved"]:
+                actions.append(("edit", r, ans))
+            elif r["ipv4"]:
+                actions.append(("add", r, ans))
+            else:
+                console.print(
+                    "  [yellow]skip: no reservation and no observed IP "
+                    "(use `devices set MAC NAME --ip`).[/yellow]"
+                )
+
+        if not actions:
+            console.print("\n[dim]No changes.[/dim]")
+            return
+
+        table = Table(title="Pending changes")
+        table.add_column("Action")
+        table.add_column("Name", style="cyan")
+        table.add_column("IP", style="green")
+        table.add_column("MAC")
+        colors = {"add": "green", "edit": "yellow", "clear": "red"}
+        for kind, r, new in actions:
+            table.add_row(
+                f"[{colors[kind]}]{kind}[/{colors[kind]}]",
+                (new if new is not None else r["name"]) or "-",
+                r["ipv4"] or "-",
+                Text(r["mac"] or "-"),
+            )
+        console.print()
+        console.print(table)
+
+        if not typer.confirm("Apply these changes?"):
+            console.print("[yellow]Aborted.[/yellow] Nothing written.")
+            raise typer.Exit(code=1)
+
+        for kind, r, new in actions:
+            if kind == "edit":
+                ok, body = api.edit_dhcp_reservation(r["reservation_id"], name=new)
+            elif kind == "add":
+                ok, body = api.add_dhcp_reservation(
+                    mac=r["mac"], ip_address=r["ipv4"], name=new,
+                )
+            else:  # clear
+                ok, body = api.del_dhcp_reservation(r["reservation_id"])
+            label = (new if new is not None else r["name"]) or "-"
+            if ok:
+                console.print(f"[green]{kind}[/green] [cyan]{label}[/cyan] → {r['ipv4'] or '-'}")
+            else:
+                console.print(
+                    f"[red]{kind} FAILED[/red] for {label}: [dim]{body[:200]}[/dim]"
+                )
+    finally:
+        api.close()
+
+
 # ---------------------------------------------------------------------- dhcp6
 
 @app.command()
