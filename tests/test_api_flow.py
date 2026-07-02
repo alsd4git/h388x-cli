@@ -829,3 +829,87 @@ def test_set_dhcp_dns_from_wan_sets_source_one(api):
     post = [c for c in responses.calls if c.request.method == "POST"][0]
     sent = post.request.body
     assert "DnsServerSource=1" in sent
+
+
+# --- config backup (download_config_backup) --------------------------------
+
+_USRCFG_VIEW_HTML = (
+    '<html><body>'
+    '<form name="fDownload" id="fDownload" method="POST" '
+    'enctype="multipart/form-data">'
+    '<input type="hidden" name="config" id="config">'
+    '<input type="hidden" id="TOKEN_DOWNLOAD" name="TOKEN_DOWNLOAD" '
+    'value="&#51;&#49;&#53;">'  # HTML-entity encoded "315"
+    '</form></body></html>'
+)
+
+# The "fake 404" reload page the view returns when not freshly armed.
+_FAKE_404_HTML = (
+    '<html><head><script>top.location.href = top.location.href;</script>'
+    '</head><body><h2>404 Not Found</h2></body></html>'
+)
+
+_CONFIG_BYTES = b"\x04\x03\x02\x01\x00\x00\x00\x00\x00\x00\x00\x05H388X" + b"\x00" * 64
+
+
+@responses.activate
+def test_download_config_backup_happy_path(api):
+    """Arm view -> read TOKEN_DOWNLOAD -> multipart POST -> octet-stream."""
+    view = f"{HOST}{api.USRCFG_VIEW_URL}"
+    dl = f"{HOST}{api.CONFIG_DOWNLOAD_URL}"
+    responses.add(responses.GET, view, body=_USRCFG_VIEW_HTML, status=200)
+    responses.add(
+        responses.POST, dl, body=_CONFIG_BYTES, status=200,
+        content_type="application/octet-stream",
+    )
+
+    ok, data = api.download_config_backup()
+    assert ok is True
+    assert data == _CONFIG_BYTES
+
+    # The multipart POST carries the *decoded* TOKEN_DOWNLOAD ("315").
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    body = post.request.body
+    body = body.decode("latin-1") if isinstance(body, bytes) else body
+    assert "TOKEN_DOWNLOAD" in body
+    assert "315" in body
+
+
+@responses.activate
+def test_download_config_backup_relogins_when_view_not_armed(api):
+    """A fake-404 view (no TOKEN_DOWNLOAD) triggers one login() + retry."""
+    view = f"{HOST}{api.USRCFG_VIEW_URL}"
+    dl = f"{HOST}{api.CONFIG_DOWNLOAD_URL}"
+    # First view GET = fake-404, second (after relogin) = armed.
+    responses.add(responses.GET, view, body=_FAKE_404_HTML, status=200)
+    responses.add(responses.GET, view, body=_USRCFG_VIEW_HTML, status=200)
+    responses.add(
+        responses.POST, dl, body=_CONFIG_BYTES, status=200,
+        content_type="application/octet-stream",
+    )
+
+    calls = {"n": 0}
+
+    def fake_login():
+        calls["n"] += 1
+        return True
+
+    api.login = fake_login  # type: ignore[assignment]
+    ok, data = api.download_config_backup()
+    assert ok is True
+    assert data == _CONFIG_BYTES
+    assert calls["n"] == 1  # relogged in exactly once
+
+
+@responses.activate
+def test_download_config_backup_fails_without_relogin_loop(api):
+    """If the view stays unarmed even after relogin, return (False, msg)."""
+    view = f"{HOST}{api.USRCFG_VIEW_URL}"
+    responses.add(responses.GET, view, body=_FAKE_404_HTML, status=200)
+
+    api.login = lambda: True  # type: ignore[assignment]
+    ok, msg = api.download_config_backup()
+    assert ok is False
+    assert "TOKEN_DOWNLOAD" in msg
+    # No POST attempted when the token was never found.
+    assert not [c for c in responses.calls if c.request.method == "POST"]

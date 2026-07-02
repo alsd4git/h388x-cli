@@ -33,6 +33,12 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 | `dhcp` | DHCPv4 server config + static reservations. |
 | `dhcp-reserve-add MAC IP NAME` | Add a static DHCPv4 reservation. IP must be inside the configured pool. |
 | `dhcp-reserve-del ID` | Delete a reservation by `_OBJ_InstID` (full path or bare suffix `2`). `-y` to skip confirmation. |
+| `devices` | Unified device view: connected clients (LAN + Wi-Fi) merged with DHCP reservations by MAC, showing observed DHCP hostname vs assigned name, online/reserved. |
+| `devices export [FILE]` | Export reservations as portable JSON `[{mac, ip, name}]` (stdout if FILE omitted). |
+| `devices import FILE` | Apply names from JSON idempotently by MAC (add/edit, never deletes). `--dry-run` previews the plan. |
+| `devices set MAC NAME` | Name a device: edit its reservation or create one (IP from `--ip` or the observed DHCP address). |
+| `devices clear MAC` | Remove a device's reservation (`-y` to skip confirmation). |
+| `devices edit` | Interactive naming device-by-device (Enter=keep, name=set/rename, `-`=clear; single confirm before writing). |
 | `dhcp6` | DHCPv6 server + Router Advertisement state. |
 | `ipv6-prefix` | DHCPv6-PD pool + static IPv6 prefixes. |
 | `dns` | DNS config + bound hostnames (DHCP + manual). |
@@ -92,6 +98,7 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 | `admin-users` | Web admin accounts (username + privilege). |
 | `web-timeout` | Web UI idle session timeout (minutes). Add `--set MINUTES` (1–60) to update. |
 | `logout` | Explicit modem logout + wipe the cached session for this host. |
+| `config backup [FILE]` | Download the full modem configuration backup (`config.bin`). Read-only; defaults to `config-YYYYmmdd-HHMMSS.bin`. Keep a snapshot before risky changes. |
 | `reboot` | Reboot the modem. `-y` to skip confirmation. |
 | `watch INTERVAL CMD…` | Re-run any subcommand every `INTERVAL` seconds (e.g. `h388x watch 5 voip`). Generic Unix `watch(1)`-style wrapper. |
 
