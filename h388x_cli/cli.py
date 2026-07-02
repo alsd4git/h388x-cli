@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import sys
@@ -4070,6 +4071,63 @@ def reboot(
             raise typer.Exit(code=1)
     finally:
         api.close()
+
+
+# --------------------------------------------------------------------- config
+
+config_app = typer.Typer(
+    help="Modem configuration management (backup).",
+    no_args_is_help=True,
+)
+app.add_typer(config_app, name="config")
+
+
+@config_app.command("backup")
+def config_backup(
+    file: Optional[str] = typer.Argument(
+        None,
+        help=(
+            "Output file for the config backup. Defaults to "
+            "`config-YYYYmmdd-HHMMSS.bin` in the current directory."
+        ),
+    ),
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Download the full modem configuration backup (config.bin).
+
+    Read-only / non-destructive: it just exports the current settings.
+    Keep this snapshot before any risky change as a safety net.
+    """
+    out = file or time.strftime("config-%Y%m%d-%H%M%S.bin")
+    api = get_api(host, user, password, insecure)
+    try:
+        ok, result = api.download_config_backup()
+    finally:
+        api.close()
+
+    if not ok:
+        if state.json:
+            _emit_json({"ok": False, "error": str(result)})
+        else:
+            console.print(f"[red]Backup failed:[/red] {result}")
+        raise typer.Exit(code=1)
+
+    data: bytes = result
+    with open(out, "wb") as fh:
+        fh.write(data)
+    digest = hashlib.sha256(data).hexdigest()
+
+    if state.json:
+        _emit_json({"ok": True, "file": out, "bytes": len(data), "sha256": digest})
+    else:
+        console.print(
+            f"[green]Saved[/green] config backup to [bold]{out}[/bold] "
+            f"({len(data)} bytes)"
+        )
+        console.print(f"  sha256: [dim]{digest}[/dim]")
 
 
 # ------------------------------------------------------------------- discover

@@ -1,4 +1,5 @@
 import hashlib
+import html as _html
 import json as _json
 import os
 import re
@@ -189,6 +190,16 @@ class ZTEH388XAPI:
     WLAN_SCHEDULE_URL = "/?_type=menuData&_tag=wlan_wifi_schedule_lua.lua"
     WLAN_BSS_STEERING_VIEW_URL = "/?_type=menuView&_tag=wlanBssSteeringOnoff&Menu3Location=0"
     WLAN_BSS_STEERING_URL = "/?_type=menuData&_tag=wlan_BssSteeringOnoff_lua.lua"
+
+    # --- User config backup (read-only export of the whole modem config) -
+    # The "Backup configurazione utente" page (``usrCfgMgr`` view) renders
+    # a per-render ``TOKEN_DOWNLOAD`` and a multipart form that POSTs to
+    # ``do_download_usercfg.lua`` to stream ``config.bin``. The view only
+    # arms (returns the real template instead of the "fake 404" reload
+    # page) right after a fresh login, so the backup flow forces a relogin
+    # if the token isn't present.
+    USRCFG_VIEW_URL = "/?_type=menuView&_tag=usrCfgMgr&Menu3Location=0"
+    CONFIG_DOWNLOAD_URL = "/?_type=menuData&_tag=do_download_usercfg.lua"
 
     NO_CACHE = {"Cache-Control": "no-cache"}
 
@@ -1656,6 +1667,71 @@ class ZTEH388XAPI:
             return resp.status_code == 200 and "ERR" not in resp.text.upper()[:200]
         except requests.RequestException:
             return False
+
+    # -------------------------------------------------------- config backup
+
+    _TOKEN_DOWNLOAD_RE = re.compile(
+        r'id="TOKEN_DOWNLOAD"[^>]*value="([^"]*)"'
+    )
+
+    def download_config_backup(
+        self, retry: bool = True
+    ) -> Tuple[bool, Any]:
+        """Download the full modem configuration backup (``config.bin``).
+
+        Non-mutating: it only reads and serializes the current config.
+        Mirrors the WebUI "Backup configurazione" button:
+
+        1. GET the ``usrCfgMgr`` view to arm it and read the per-render
+           ``TOKEN_DOWNLOAD``. The view returns a "fake 404" reload page
+           unless the session was just logged in, so when the token is
+           absent we re-``login()`` once and retry.
+        2. POST the ``fDownload`` multipart form (``config`` + the
+           ``TOKEN_DOWNLOAD``) to ``do_download_usercfg.lua``; the modem
+           streams back the binary config as an ``octet-stream``
+           attachment.
+
+        Returns ``(True, bytes)`` with the raw config on success, or
+        ``(False, error_message)`` otherwise.
+        """
+        try:
+            view = self.session.get(
+                f"{self.base_url}{self.USRCFG_VIEW_URL}",
+                headers=self.NO_CACHE,
+                timeout=15,
+            )
+            m = self._TOKEN_DOWNLOAD_RE.search(view.text)
+            if not m:
+                # View not armed (fake-404). A fresh login arms it.
+                if retry and self.login():
+                    return self.download_config_backup(retry=False)
+                return False, "could not arm config backup view (no TOKEN_DOWNLOAD)"
+
+            token_download = _html.unescape(m.group(1))
+            resp = self.session.post(
+                f"{self.base_url}{self.CONFIG_DOWNLOAD_URL}",
+                files={
+                    "config": ("", ""),
+                    "TOKEN_DOWNLOAD": ("", token_download),
+                },
+                headers=self.NO_CACHE,
+                timeout=60,
+            )
+            ctype = resp.headers.get("Content-Type", "")
+            if (
+                resp.status_code != 200
+                or "octet-stream" not in ctype
+                or b"SessionTimeout" in resp.content[:200]
+            ):
+                if retry and self.login():
+                    return self.download_config_backup(retry=False)
+                return False, (
+                    f"unexpected download response (status={resp.status_code}, "
+                    f"content-type={ctype!r}, {len(resp.content)} bytes)"
+                )
+            return True, resp.content
+        except requests.RequestException as e:
+            return False, f"requests error: {e}"
 
     # --------------------------------------------------------- close / logout
 
