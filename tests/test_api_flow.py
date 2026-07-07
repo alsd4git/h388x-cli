@@ -913,3 +913,131 @@ def test_download_config_backup_fails_without_relogin_loop(api):
     assert "TOKEN_DOWNLOAD" in msg
     # No POST attempted when the token was never found.
     assert not [c for c in responses.calls if c.request.method == "POST"]
+
+
+# --- network diagnostics: ping / traceroute --------------------------------
+
+def _instance(fields):
+    """Build one <Instance> block from an ordered dict of name -> value."""
+    parts = ["<Instance>"]
+    for name, value in fields.items():
+        parts.append(f"<ParaName>{name}</ParaName><ParaValue>{value}</ParaValue>")
+    parts.append("</Instance>")
+    return "".join(parts)
+
+
+def _diag_xml(root, fields):
+    return f"<ajax_response_xml_root><{root}>{_instance(fields)}</{root}></ajax_response_xml_root>"
+
+
+PING_RUNNING_XML = _diag_xml(
+    "OBJ_DEVPING_ID",
+    {"_InstID": "", "Host": "1.1.1.1", "DiagnosticsState": "Requested", "PingAck": "NULL"},
+)
+PING_DONE_XML = _diag_xml(
+    "OBJ_DEVPING_ID",
+    {
+        "_InstID": "",
+        "Host": "1.1.1.1",
+        "DiagnosticsState": "Complete",
+        "PingAck": "PING 1.1.1.1: 4 packets transmitted, 4 received&#44; 0% loss",
+    },
+)
+
+TRACERT_RUNNING_XML = _diag_xml(
+    "OBJ_TRACERT_ID",
+    {"_InstID": "", "Host": "1.1.1.1", "Flag": "1", "DiagnosticsState": "Requested", "Result": "NULL"},
+)
+TRACERT_DONE_XML = _diag_xml(
+    "OBJ_TRACERT_ID",
+    {
+        "_InstID": "",
+        "Host": "1.1.1.1",
+        "Flag": "0",
+        "DiagnosticsState": "Complete",
+        "Result": "traceroute to 1.1.1.1\n 1  10.0.0.1  1.2 ms",
+    },
+)
+
+
+@responses.activate
+def test_ping_polls_until_result(api):
+    """Start ping -> poll (running -> complete) -> return unescaped PingAck."""
+    view = f"{HOST}{api.NETDIAG_VIEW_URL}"
+    data = f"{HOST}{api.PING_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(responses.GET, login, json={"sess_token": "T"}, status=200)
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+    # First poll still running, then complete.
+    responses.add(responses.GET, data, body=PING_RUNNING_XML, status=200)
+    responses.add(responses.GET, data, body=PING_DONE_XML, status=200)
+
+    ok, result = api.ping("1.1.1.1", poll_interval=0, max_wait=5)
+    assert ok is True
+    assert "4 received, 0% loss" in result  # &#44; entity decoded
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    assert "IF_ACTION=PingDiagnosis" in post.request.body
+    assert "Host=1.1.1.1" in post.request.body
+
+
+@responses.activate
+def test_traceroute_polls_until_result(api):
+    """Start traceroute -> poll (Flag 1 -> 0) -> return Result."""
+    view = f"{HOST}{api.NETDIAG_VIEW_URL}"
+    data = f"{HOST}{api.TRACEROUTE_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(responses.GET, login, json={"sess_token": "T"}, status=200)
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+    responses.add(responses.GET, data, body=TRACERT_RUNNING_XML, status=200)
+    responses.add(responses.GET, data, body=TRACERT_DONE_XML, status=200)
+
+    ok, result = api.traceroute("1.1.1.1", max_hops=5, poll_interval=0, max_wait=5)
+    assert ok is True
+    assert "traceroute to 1.1.1.1" in result
+
+    post = [c for c in responses.calls if c.request.method == "POST"][0]
+    assert "IF_ACTION=TraceRouteDiagnosis" in post.request.body
+    assert "MaxHopCount=5" in post.request.body
+
+
+@responses.activate
+def test_ping_returns_error_when_start_fails(api):
+    """A non-SUCC start response yields (False, message) with no polling."""
+    view = f"{HOST}{api.NETDIAG_VIEW_URL}"
+    data = f"{HOST}{api.PING_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(responses.GET, login, json={"sess_token": "T"}, status=200)
+    responses.add(responses.POST, data, body=ERR_PAGE_EXPIRED_XML, status=200)
+
+    ok, msg = api.ping("1.1.1.1", poll_interval=0, max_wait=5)
+    assert ok is False
+    assert "could not start diagnostic" in msg
+    # No GET poll against the data endpoint happened.
+    assert not [
+        c for c in responses.calls
+        if c.request.method == "GET" and c.request.url == data
+    ]
+
+
+@responses.activate
+def test_diagnostic_times_out(api):
+    """If it never leaves the running state, we time out with a message."""
+    view = f"{HOST}{api.NETDIAG_VIEW_URL}"
+    data = f"{HOST}{api.PING_URL}"
+    login = f"{HOST}/?_type=loginData&_tag=login_entry"
+
+    responses.add(responses.GET, view, body="<root/>", status=200)
+    responses.add(responses.GET, login, json={"sess_token": "T"}, status=200)
+    responses.add(responses.POST, data, body=OK_XML, status=200)
+    responses.add(responses.GET, data, body=PING_RUNNING_XML, status=200)
+
+    ok, msg = api.ping("1.1.1.1", poll_interval=0, max_wait=0)
+    assert ok is False
+    assert "timeout" in msg
