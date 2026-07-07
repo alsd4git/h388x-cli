@@ -16,6 +16,7 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 | Command | What it does |
 |---------|--------------|
 | `info` | Model, serial, firmware/hardware/boot version, build date. |
+| `health` | One-shot status overview (info + DSL + WAN + VoIP + mesh). |
 | `stats` | DSL home-page summary (status, profile, sync rate, SNR margin, attenuation, power, uptime, FEC errors). Supports `--watch N` for live updates. |
 | `dsl-interface` | Full DSL PHY view (current/max rates per direction, interleave depth/delay, CRC/FEC counters, encapsulation, Showtime start). |
 | `wan` | WAN connections (public IPv4, gateway, DNS, uptime, services). `--all` includes disconnected ones. |
