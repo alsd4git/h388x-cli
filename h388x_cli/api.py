@@ -3,6 +3,7 @@ import html as _html
 import json as _json
 import os
 import re
+import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
@@ -200,6 +201,14 @@ class ZTEH388XAPI:
     # if the token isn't present.
     USRCFG_VIEW_URL = "/?_type=menuView&_tag=usrCfgMgr&Menu3Location=0"
     CONFIG_DOWNLOAD_URL = "/?_type=menuData&_tag=do_download_usercfg.lua"
+
+    # --- Network diagnostics (ping / traceroute run *from* the modem) -----
+    # TR-069-style async diagnostics: POST ``IF_ACTION=<PingDiagnosis|
+    # TraceRouteDiagnosis>`` to start, then poll the same endpoint until
+    # the result field is populated. Non-mutating (no config change).
+    NETDIAG_VIEW_URL = "/?_type=menuView&_tag=networkDiag&Menu3Location=0"
+    PING_URL = "/?_type=menuData&_tag=networkdiag_ping_lua.lua"
+    TRACEROUTE_URL = "/?_type=menuData&_tag=networkdiag_traceroute_lua.lua"
 
     NO_CACHE = {"Cache-Control": "no-cache"}
 
@@ -1732,6 +1741,117 @@ class ZTEH388XAPI:
             return True, resp.content
         except requests.RequestException as e:
             return False, f"requests error: {e}"
+
+    # ---------------------------------------------------- network diagnostics
+
+    def _run_diagnostic(
+        self,
+        data_url: str,
+        action: str,
+        root: str,
+        fields: Dict[str, str],
+        result_key: str,
+        still_running,
+        poll_interval: float,
+        max_wait: float,
+    ) -> Tuple[bool, str]:
+        """Start a TR-069-style diagnostic and poll for its result.
+
+        POSTs ``IF_ACTION=<action>`` to kick the diagnostic off, then GETs
+        the same endpoint every ``poll_interval`` seconds (up to
+        ``max_wait``) until ``still_running(row)`` is False, at which point
+        the ``result_key`` field holds the textual output. Returns
+        ``(True, text)`` on success or ``(False, message)`` otherwise.
+        """
+        ok, body = self._post_action(
+            self.NETDIAG_VIEW_URL, data_url, action=action, fields=fields,
+        )
+        if not ok:
+            return False, f"could not start diagnostic: {body[:200]}"
+
+        deadline = time.monotonic() + max_wait
+        while time.monotonic() < deadline:
+            try:
+                r = self.session.get(
+                    f"{self.base_url}{data_url}", headers=self.NO_CACHE, timeout=15
+                )
+            except requests.RequestException as e:
+                return False, f"requests error while polling: {e}"
+            rows = self._parse_instances(r.text, root)
+            row = rows[0] if rows else {}
+            if not still_running(row):
+                val = row.get(result_key)
+                if val and val != "NULL":
+                    return True, _html.unescape(val)
+                return False, (
+                    "diagnostic finished without a result "
+                    f"(state={row.get('DiagnosticsState')!r})"
+                )
+            time.sleep(poll_interval)
+        return False, f"timeout after {max_wait:g}s waiting for diagnostic result"
+
+    def ping(
+        self,
+        host: str,
+        *,
+        poll_interval: float = 3.0,
+        max_wait: float = 60.0,
+    ) -> Tuple[bool, str]:
+        """Run a ping from the modem to ``host`` and return the output.
+
+        Non-mutating: it only executes a diagnostic ping. Result text is
+        the modem's own ``PingAck`` (per-reply lines + summary stats).
+
+        The WebUI ping form only exposes the target ``Host`` (and an
+        interface selector); repeat count / packet size / timeout are
+        fixed server-side (4 × 56 bytes), so they are not parameters here.
+        """
+        fields = {
+            "_InstID": "",
+            "Host": host,
+            "Interface": "",
+        }
+        return self._run_diagnostic(
+            self.PING_URL, "PingDiagnosis", "OBJ_DEVPING_ID", fields,
+            result_key="PingAck",
+            still_running=lambda row: (row.get("PingAck") or "NULL") == "NULL",
+            poll_interval=poll_interval, max_wait=max_wait,
+        )
+
+    def traceroute(
+        self,
+        host: str,
+        *,
+        max_hops: int = 30,
+        timeout_ms: int = 5000,
+        protocol: str = "UDP",
+        poll_interval: float = 3.0,
+        max_wait: float = 120.0,
+    ) -> Tuple[bool, str]:
+        """Run a traceroute from the modem to ``host`` and return the output.
+
+        Non-mutating: it only executes a diagnostic traceroute. Result
+        text is the modem's own ``Result`` (per-hop lines).
+
+        The WebUI form exposes ``Host``, ``MaxHopCount``, ``Timeout`` and
+        ``Protocol``; probes-per-hop / packet size / DSCP are fixed
+        server-side, so they are not parameters here.
+        """
+        fields = {
+            "_InstID": "",
+            "Host": host,
+            "Interface": "",
+            "Timeout": str(timeout_ms),
+            "MaxHopCount": str(max_hops),
+            "Protocol": protocol,
+            "Control": "0",
+        }
+        return self._run_diagnostic(
+            self.TRACEROUTE_URL, "TraceRouteDiagnosis", "OBJ_TRACERT_ID", fields,
+            result_key="Result",
+            still_running=lambda row: row.get("Flag") == "1",
+            poll_interval=poll_interval, max_wait=max_wait,
+        )
 
     # --------------------------------------------------------- close / logout
 

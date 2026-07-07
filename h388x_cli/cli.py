@@ -4130,6 +4130,83 @@ def config_backup(
         console.print(f"  sha256: [dim]{digest}[/dim]")
 
 
+# --------------------------------------------------------- network diagnostics
+
+@app.command()
+def ping(
+    host: str = typer.Argument(..., help="Target host or IP to ping."),
+    host_opt: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Ping a host from the modem (runs on the gateway, not this machine).
+
+    The modem's ping form only takes a target host; count/size/timeout are
+    fixed server-side (4 x 56 bytes).
+    """
+    api = get_api(host_opt, user, password, insecure)
+    try:
+        if state.json:
+            ok, result = api.ping(host)
+        else:
+            with console.status(f"[bold green]Pinging {host} from the modem..."):
+                ok, result = api.ping(host)
+    finally:
+        api.close()
+
+    if state.json:
+        _emit_json({"ok": ok, "host": host, "result": result})
+        if not ok:
+            raise typer.Exit(code=1)
+        return
+    if not ok:
+        console.print(f"[red]Ping failed:[/red] {result}")
+        raise typer.Exit(code=1)
+    console.print(result, markup=False, emoji=False, highlight=False)
+
+
+@app.command()
+def traceroute(
+    host: str = typer.Argument(..., help="Target host or IP to trace."),
+    max_hops: int = typer.Option(30, "--max-hops", "-m", help="Maximum hop count."),
+    timeout_ms: int = typer.Option(
+        5000, "--timeout", help="Per-probe timeout in milliseconds."
+    ),
+    protocol: str = typer.Option("UDP", "--protocol", help="Probe protocol (UDP/ICMP)."),
+    host_opt: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+):
+    """Traceroute to a host from the modem (runs on the gateway)."""
+    api = get_api(host_opt, user, password, insecure)
+    try:
+        if state.json:
+            ok, result = api.traceroute(
+                host, max_hops=max_hops,
+                timeout_ms=timeout_ms, protocol=protocol,
+            )
+        else:
+            with console.status(f"[bold green]Tracing route to {host} from the modem..."):
+                ok, result = api.traceroute(
+                    host, max_hops=max_hops,
+                    timeout_ms=timeout_ms, protocol=protocol,
+                )
+    finally:
+        api.close()
+
+    if state.json:
+        _emit_json({"ok": ok, "host": host, "result": result})
+        if not ok:
+            raise typer.Exit(code=1)
+        return
+    if not ok:
+        console.print(f"[red]Traceroute failed:[/red] {result}")
+        raise typer.Exit(code=1)
+    console.print(result, markup=False, emoji=False, highlight=False)
+
+
 # ------------------------------------------------------------------- discover
 
 @app.command()
