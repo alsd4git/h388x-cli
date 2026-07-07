@@ -99,6 +99,8 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 | `web-timeout` | Web UI idle session timeout (minutes). Add `--set MINUTES` (1–60) to update. |
 | `logout` | Explicit modem logout + wipe the cached session for this host. |
 | `config backup [FILE]` | Download the full modem configuration backup (`config.bin`). Read-only; defaults to `config-YYYYmmdd-HHMMSS.bin`. Keep a snapshot before risky changes. |
+| `ping HOST` | Ping a host **from the modem** (runs on the gateway). Count/size/timeout are fixed server-side. |
+| `traceroute HOST` | Traceroute to a host **from the modem**. `-m/--max-hops`, `--timeout`, `--protocol` (UDP/ICMP). |
 | `reboot` | Reboot the modem. `-y` to skip confirmation. |
 | `watch INTERVAL CMD…` | Re-run any subcommand every `INTERVAL` seconds (e.g. `h388x watch 5 voip`). Generic Unix `watch(1)`-style wrapper. |
 
