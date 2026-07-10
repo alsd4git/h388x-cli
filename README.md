@@ -165,10 +165,30 @@ H388X_USER=admin         # optional, default admin
 You can also override any value on the command line:
 
 ```bash
-h388x stats --host 192.168.1.254 --user custom_admin --password your_password
+h388x stats --host 192.168.1.254 --user custom_admin
 h388x stats --host https://modem.example.com:8443
 h388x stats --host https://modem.example.com -k  # --insecure: skip TLS verify
 ```
+
+Avoid passing passwords on the command line in normal use: they can be saved
+in shell history or exposed to other local processes. Prefer `H388X_PASSWORD`
+in a `.env` file (which is ignored by Git) or in the command environment.
+
+### Optional real-device smoke test
+
+The regular test suite never contacts a modem. To verify the login flow and a
+single **read-only** device-information request against your own H388X, create
+the `.env` file above and explicitly opt in:
+
+```bash
+H388X_REAL_SMOKE=1 uv run pytest -m real_device
+```
+
+This test does not change modem settings and disables the CLI session cache,
+but it does create an admin session. Log out of the WebUI first (the modem
+allows only one admin session) and run `h388x logout` afterwards if you want to
+free that slot immediately. For a self-signed HTTPS modem endpoint, add
+`H388X_INSECURE=1` only on a trusted local network.
 
 ## Usage
 

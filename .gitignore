@@ -53,6 +53,7 @@ venv.bak/
 .vscode/
 .vscode-test/
 .idea/
+.antigravitycli/
 
 # OS
 .DS_Store

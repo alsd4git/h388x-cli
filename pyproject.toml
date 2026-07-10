@@ -25,6 +25,9 @@ packages = ["h388x_cli"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
+markers = [
+    "real_device: opt-in read-only smoke test against a configured H388X modem",
+]
 
 [dependency-groups]
 dev = [
