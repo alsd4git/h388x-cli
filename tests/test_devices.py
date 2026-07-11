@@ -4,11 +4,12 @@ These exercise the pure merge/export/import-plan logic without any
 network. The actual writes are covered by ``test_api_flow.py``.
 """
 
-from h388x_cli.cli import (
-    _merge_devices,
-    _norm_mac,
-    _plan_import,
-    _reservations_export,
+from h388x_cli import cli
+from h388x_cli.devices import (
+    merge_devices,
+    norm_mac,
+    plan_import,
+    reservations_export,
 )
 from h388x_cli.models import Client, DhcpBinding
 
@@ -24,9 +25,16 @@ def _binding(**kw):
 # --- _norm_mac --------------------------------------------------------------
 
 def test_norm_mac_lowercases_and_strips():
-    assert _norm_mac("  AA:BB:CC:00:11:22 ") == "aa:bb:cc:00:11:22"
-    assert _norm_mac(None) == ""
-    assert _norm_mac("") == ""
+    assert norm_mac("  AA:BB:CC:00:11:22 ") == "aa:bb:cc:00:11:22"
+    assert norm_mac(None) == ""
+    assert norm_mac("") == ""
+
+
+def test_cli_keeps_legacy_device_helper_imports():
+    assert cli._norm_mac is norm_mac
+    assert cli._merge_devices is merge_devices
+    assert cli._reservations_export is reservations_export
+    assert cli._plan_import is plan_import
 
 
 # --- _merge_devices ---------------------------------------------------------
@@ -41,7 +49,7 @@ def test_merge_joins_client_and_reservation_by_mac_case_insensitive():
         IPAddr="192.168.1.50", MACAddr="aa:bb:cc:00:11:22",
     )]
 
-    rows = _merge_devices(clients, bindings)
+    rows = merge_devices(clients, bindings)
 
     assert len(rows) == 1
     row = rows[0]
@@ -59,7 +67,7 @@ def test_merge_reservation_only_device_shows_offline_with_reserved_ip():
         IPAddr="192.168.1.20", MACAddr="DE:AD:BE:EF:00:01",
     )]
 
-    rows = _merge_devices([], bindings)
+    rows = merge_devices([], bindings)
 
     assert len(rows) == 1
     row = rows[0]
@@ -75,7 +83,7 @@ def test_merge_connected_without_reservation():
         MACAddress="11:22:33:44:55:66", AliasName="SSID1",
     )]
 
-    rows = _merge_devices(clients, [])
+    rows = merge_devices(clients, [])
 
     assert len(rows) == 1
     assert rows[0]["online"] is True
@@ -87,7 +95,7 @@ def test_merge_skips_entries_without_mac():
     clients = [_client(HostName="ghost", IPAddress="192.168.1.99")]
     bindings = [_binding(_OBJ_InstID="X", Name="n", IPAddr="1.2.3.4")]
 
-    assert _merge_devices(clients, bindings) == []
+    assert merge_devices(clients, bindings) == []
 
 
 # --- _reservations_export ---------------------------------------------------
@@ -99,7 +107,7 @@ def test_export_sorts_by_ip_and_only_includes_mac_rows():
         _binding(_OBJ_InstID="C", Name="no-mac", IPAddr="192.168.1.5"),
     ]
 
-    out = _reservations_export(bindings)
+    out = reservations_export(bindings)
 
     assert out == [
         {"mac": "11:11", "ip": "192.168.1.20", "name": "a"},
@@ -118,20 +126,20 @@ def _existing():
 
 def test_plan_import_marks_identical_entry_unchanged():
     entries = [{"mac": "DE:AD:BE:EF:00:01", "ip": "192.168.1.20", "name": "NAS"}]
-    plan = _plan_import(entries, _existing())
+    plan = plan_import(entries, _existing())
     assert [p["action"] for p in plan] == ["unchanged"]
 
 
 def test_plan_import_is_idempotent_case_insensitive():
     # Lower-case MAC, same name/ip -> still unchanged (no spurious edit).
     entries = [{"mac": "de:ad:be:ef:00:01", "ip": "192.168.1.20", "name": "NAS"}]
-    plan = _plan_import(entries, _existing())
+    plan = plan_import(entries, _existing())
     assert plan[0]["action"] == "unchanged"
 
 
 def test_plan_import_detects_rename_as_edit():
     entries = [{"mac": "DE:AD:BE:EF:00:01", "ip": "192.168.1.20", "name": "NAS2"}]
-    plan = _plan_import(entries, _existing())
+    plan = plan_import(entries, _existing())
     assert plan[0]["action"] == "edit"
     assert plan[0]["id"] == "DEV.V4DP.Sr.Pl1.Bd1"
     assert plan[0]["old_name"] == "NAS"
@@ -139,19 +147,19 @@ def test_plan_import_detects_rename_as_edit():
 
 def test_plan_import_new_mac_is_add():
     entries = [{"mac": "AA:BB:CC:00:11:22", "ip": "192.168.1.50", "name": "Laptop"}]
-    plan = _plan_import(entries, _existing())
+    plan = plan_import(entries, _existing())
     assert plan[0]["action"] == "add"
     assert plan[0]["id"] is None
 
 
 def test_plan_import_missing_mac_is_error():
-    plan = _plan_import([{"mac": "", "ip": "1.2.3.4", "name": "x"}], _existing())
+    plan = plan_import([{"mac": "", "ip": "1.2.3.4", "name": "x"}], _existing())
     assert plan[0]["action"] == "error"
     assert "mac" in plan[0]["error"]
 
 
 def test_plan_import_missing_ip_on_add_is_error():
-    plan = _plan_import([{"mac": "99:99:99:99:99:99", "name": "x"}], _existing())
+    plan = plan_import([{"mac": "99:99:99:99:99:99", "name": "x"}], _existing())
     assert plan[0]["action"] == "error"
     assert "ip" in plan[0]["error"]
 
@@ -159,6 +167,6 @@ def test_plan_import_missing_ip_on_add_is_error():
 def test_plan_import_empty_ip_on_existing_keeps_current_ip():
     # No IP provided but reservation exists -> keep its IP, only rename.
     entries = [{"mac": "DE:AD:BE:EF:00:01", "name": "NAS-Renamed"}]
-    plan = _plan_import(entries, _existing())
+    plan = plan_import(entries, _existing())
     assert plan[0]["action"] == "edit"
     assert plan[0]["ip"] == "192.168.1.20"
