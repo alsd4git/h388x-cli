@@ -13,6 +13,12 @@ from rich.table import Table
 from rich.text import Text
 
 from .api import ZTEH388XAPI
+from .devices import (
+    merge_devices as _merge_devices,
+    norm_mac as _norm_mac,
+    plan_import as _plan_import,
+    reservations_export as _reservations_export,
+)
 from .discovery import Spider
 from .models import (
     AdminUser,
@@ -1574,73 +1580,6 @@ devices_app = typer.Typer(
 app.add_typer(devices_app, name="devices")
 
 
-def _norm_mac(mac: Optional[str]) -> str:
-    """Normalize a MAC for use as a merge key (lower-case, no spaces)."""
-    return (mac or "").strip().lower()
-
-
-def _merge_devices(
-    clients: List[Client],
-    bindings: List[DhcpBinding],
-) -> List[Dict[str, Any]]:
-    """Merge connected clients with DHCP reservations, keyed by MAC.
-
-    Each row exposes both the observed DHCP hostname and the assigned
-    reservation name so the route-A distinction stays explicit. Devices
-    that have a reservation but are not currently connected still show up
-    (online=False), as do connected devices without a reservation.
-    """
-    merged: Dict[str, Dict[str, Any]] = {}
-
-    for c in clients:
-        key = _norm_mac(c.mac)
-        if not key:
-            continue
-        row = merged.setdefault(key, {
-            "mac": c.mac,
-            "hostname": None,
-            "ipv4": None,
-            "ipv6": None,
-            "interface": None,
-            "online": False,
-            "reserved": False,
-            "name": None,
-            "reserved_ip": None,
-            "reservation_id": None,
-        })
-        row["online"] = True
-        row["hostname"] = c.hostname or row["hostname"]
-        row["ipv4"] = c.ipv4 or row["ipv4"]
-        row["ipv6"] = c.ipv6 or row["ipv6"]
-        row["interface"] = c.interface or row["interface"]
-
-    for b in bindings:
-        key = _norm_mac(b.mac)
-        if not key:
-            continue
-        row = merged.setdefault(key, {
-            "mac": b.mac,
-            "hostname": None,
-            "ipv4": None,
-            "ipv6": None,
-            "interface": None,
-            "online": False,
-            "reserved": False,
-            "name": None,
-            "reserved_ip": None,
-            "reservation_id": None,
-        })
-        row["reserved"] = True
-        row["name"] = b.name or row["name"]
-        row["reserved_ip"] = b.ip_address or row["reserved_ip"]
-        row["reservation_id"] = b.id or row["reservation_id"]
-        # If the device isn't currently connected we still have an IP to show.
-        if not row["ipv4"]:
-            row["ipv4"] = b.ip_address
-
-    return list(merged.values())
-
-
 @devices_app.callback(invoke_without_command=True)
 def devices_main(
     ctx: typer.Context,
@@ -1699,20 +1638,6 @@ def devices_main(
         api.close()
 
 
-def _reservations_export(bindings: List[DhcpBinding]) -> List[Dict[str, str]]:
-    """Build the portable ``[{mac, ip, name}]`` export from reservations.
-
-    Only reservations with a MAC are exported (MAC is the route-A key).
-    Sorted by IP for stable, diff-friendly output.
-    """
-    out = [
-        {"mac": b.mac, "ip": b.ip_address or "", "name": b.name or ""}
-        for b in bindings
-        if b.mac
-    ]
-    return sorted(out, key=lambda r: r["ip"])
-
-
 @devices_app.command("export")
 def devices_export(
     file: Optional[str] = typer.Argument(
@@ -1743,67 +1668,6 @@ def devices_export(
             )
     else:
         _emit_json(data)
-
-
-def _plan_import(
-    entries: List[Dict[str, Any]],
-    bindings: List[DhcpBinding],
-) -> List[Dict[str, Any]]:
-    """Compute the idempotent import plan keyed by MAC.
-
-    For each ``{mac, ip, name}`` entry, decide the action against the
-    current reservations:
-    - ``add``       — no reservation exists for that MAC,
-    - ``edit``      — a reservation exists but name and/or IP differ,
-    - ``unchanged`` — reservation already matches (idempotent no-op),
-    - ``error``     — malformed entry (missing MAC, or missing IP on add).
-
-    Returns one plan dict per entry; never deletes (pruning is out of
-    scope, use ``devices clear`` for removals).
-    """
-    by_mac = {_norm_mac(b.mac): b for b in bindings if b.mac}
-    plan: List[Dict[str, Any]] = []
-
-    for e in entries:
-        mac = (e.get("mac") or "").strip()
-        ip = (e.get("ip") or "").strip()
-        name = (e.get("name") or "").strip()
-        key = _norm_mac(mac)
-
-        item: Dict[str, Any] = {
-            "mac": mac, "ip": ip, "name": name,
-            "id": None, "old_name": None, "old_ip": None,
-        }
-
-        if not key:
-            item["action"] = "error"
-            item["error"] = "missing mac"
-            plan.append(item)
-            continue
-
-        existing = by_mac.get(key)
-        if existing is None:
-            if not ip:
-                item["action"] = "error"
-                item["error"] = "missing ip for new reservation"
-            else:
-                item["action"] = "add"
-            plan.append(item)
-            continue
-
-        item["id"] = existing.id
-        item["old_name"] = existing.name or ""
-        item["old_ip"] = existing.ip_address or ""
-        # An empty IP in the import keeps the current reservation IP.
-        target_ip = ip or (existing.ip_address or "")
-        item["ip"] = target_ip
-        if (existing.name or "") == name and (existing.ip_address or "") == target_ip:
-            item["action"] = "unchanged"
-        else:
-            item["action"] = "edit"
-        plan.append(item)
-
-    return plan
 
 
 @devices_app.command("import")
