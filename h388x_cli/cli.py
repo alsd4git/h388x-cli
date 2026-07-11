@@ -2311,8 +2311,11 @@ def voip(
         if state.json:
             _emit_json({
                 "lines": [
-                    {**l.model_dump(), "phy_list": phy_by_id.get(l.id_alt or l.id)}
-                    for l in lines
+                    {
+                        **line.model_dump(),
+                        "phy_list": phy_by_id.get(line.id_alt or line.id),
+                    }
+                    for line in lines
                 ],
                 "sip_lines": [s.model_dump() for s in sips],
                 "bindings": bindings,
@@ -2332,15 +2335,15 @@ def voip(
         table.add_column("Registration")
         table.add_column("Bound jacks", style="green")
 
-        for l in lines:
-            vl_id = l.id or l.id_alt
+        for line in lines:
+            vl_id = line.id or line.id_alt
             sip = sip_by_vl.get(vl_id) if vl_id else None
             table.add_row(
                 _short_line_id(vl_id),
                 (sip.phone_name if sip else None) or "-",
                 (sip.auth_username if sip else None) or "[dim]not set[/dim]",
-                _voip_status_style(l.is_online),
-                _phy_jacks(phy_by_id.get(l.id_alt or l.id)),
+                _voip_status_style(line.is_online),
+                _phy_jacks(phy_by_id.get(line.id_alt or line.id)),
             )
         console.print(table)
     finally:

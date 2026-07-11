@@ -27,7 +27,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter, deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
-from urllib.parse import parse_qs, urlparse, urlsplit
+from urllib.parse import urlsplit
 
 import requests
 

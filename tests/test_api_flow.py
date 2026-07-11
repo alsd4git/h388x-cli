@@ -9,8 +9,6 @@ common helpers without touching the modem. They cover:
 - a normal happy path against an XML row endpoint.
 """
 
-import re
-
 import pytest
 import responses
 
