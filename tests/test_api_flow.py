@@ -90,6 +90,61 @@ def test_get_admin_users_parses_row(api):
     assert rows == [{"_InstID": "IGD.AU1", "Username": "admin", "Right": "1"}]
 
 
+@responses.activate
+def test_reboot_refreshes_csrf_token_before_restart(api):
+    responses.add(
+        responses.GET,
+        f"{HOST}{api.REBOOT_VIEW_URL}",
+        body="<html>reboot form</html>",
+        status=200,
+    )
+    responses.add(
+        responses.GET,
+        f"{HOST}/?_type=loginData&_tag=login_entry",
+        json={"sess_token": "FRESH-TOKEN"},
+        status=200,
+    )
+    responses.add(
+        responses.POST,
+        f"{HOST}{api.REBOOT_URL}",
+        body=(
+            "<ajax_response_xml_root>"
+            "<IF_ERRORSTR>SUCC</IF_ERRORSTR>"
+            "<IF_ERRORID>0</IF_ERRORID>"
+            "<sess_token>NEXT-TOKEN</sess_token>"
+            "</ajax_response_xml_root>"
+        ),
+        status=200,
+        content_type="text/xml",
+    )
+
+    assert api.reboot() is True
+    request = responses.calls[-1].request
+    assert "_sessionTOKEN=FRESH-TOKEN" in request.body
+
+
+@responses.activate
+def test_logout_refreshes_csrf_token_before_releasing_session(api):
+    responses.add(
+        responses.GET,
+        f"{HOST}/?_type=loginData&_tag=login_entry",
+        json={"sess_token": "FRESH-LOGOUT-TOKEN"},
+        status=200,
+    )
+    responses.add(
+        responses.POST,
+        f"{HOST}/?_type=loginData&_tag=logout_entry",
+        body="<ajax_response_xml_root><IF_ERRORSTR>SUCC</IF_ERRORSTR></ajax_response_xml_root>",
+        status=200,
+        content_type="text/xml",
+    )
+
+    api.logout()
+
+    request = responses.calls[-1].request
+    assert "_sessionTOKEN=FRESH-LOGOUT-TOKEN" in request.body
+
+
 # --- raw + JSON path: topology endpoint ------------------------------------
 
 TOPOLOGY_JSON = (
