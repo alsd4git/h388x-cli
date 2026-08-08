@@ -309,6 +309,10 @@ Covers:
 See [`ROADMAP.md`](./ROADMAP.md) for the per-endpoint implementation
 checklist.
 
+## License
+
+Released under the [MIT License](./LICENSE).
+
 ## Troubleshooting
 
 - **Login failed / "Il sistema non è gestibile"**: the modem allows a

@@ -264,11 +264,15 @@ class Spider:
         self._asset_queue.append(path)
 
     def _fetch_asset(self, path: str) -> None:
+        if self._requests_made >= self.max_requests:
+            return
         url = f"{self.api.base_url}{path}"
+        attempted = False
         try:
             self._tick(f"asset      GET {path}")
-            r = self.api.session.get(url, headers=self.api.NO_CACHE, timeout=8)
             self._requests_made += 1
+            attempted = True
+            r = self.api.session.get(url, headers=self.api.NO_CACHE, timeout=8)
             ctype = r.headers.get("Content-Type", "")
             text = r.text
             asset = Asset(
@@ -295,7 +299,8 @@ class Spider:
                 path=path, status=0, bytes=0, content_type="", error=str(e)
             )
         finally:
-            time.sleep(self.delay)
+            if attempted:
+                time.sleep(self.delay)
 
     def _mine_menu_tree(self, text: str, source: str) -> int:
         """Find ``var menuTreeJSON = [...]`` and enqueue all real menuView/menuData."""
@@ -507,11 +512,17 @@ class Spider:
 
     def _do_fetch_endpoint(self, ep: Endpoint) -> Optional[str]:
         """Single GET for an endpoint; updates ``ep`` in place. Returns body."""
+        if self._requests_made >= self.max_requests:
+            if not ep.fetched:
+                ep.skipped_reason = "request-budget"
+            return None
         url = f"{self.api.base_url}{ep.url()}"
+        attempted = False
         try:
             self._tick(f"{ep.type:10s} GET {ep.url()}")
-            r = self.api.session.get(url, headers=self.api.NO_CACHE, timeout=8)
             self._requests_made += 1
+            attempted = True
+            r = self.api.session.get(url, headers=self.api.NO_CACHE, timeout=8)
             ep.fetched = True
             ep.status = r.status_code
             ep.content_type = r.headers.get("Content-Type", "")
@@ -525,7 +536,8 @@ class Spider:
             self._errors += 1
             return None
         finally:
-            time.sleep(self.delay)
+            if attempted:
+                time.sleep(self.delay)
 
     @staticmethod
     def _classify_body(ep: Endpoint, text: str) -> None:

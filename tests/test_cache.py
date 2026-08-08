@@ -61,6 +61,15 @@ def test_save_requires_sid_cookie(tmp_path):
     assert not a._cache_path().exists()
 
 
+def test_cached_session_handles_duplicate_sid_scopes(tmp_path):
+    api = _new_api(tmp_path)
+    api.session_token = "TOK"
+    api.session.cookies.set("SID", "one", domain="modem.test", path="/")
+    api.session.cookies.set("SID", "two", domain="modem.test", path="/admin")
+
+    assert api.has_cached_session is True
+
+
 def test_save_no_op_when_cache_disabled(tmp_path):
     a = _new_api(tmp_path, enabled=False)
     a.session_token = "TOK"
