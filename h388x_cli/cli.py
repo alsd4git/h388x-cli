@@ -21,6 +21,8 @@ from .devices import (
     reservations_export as _reservations_export,
 )
 from .discovery import Spider
+from .discovery import compare_discovery_reports
+from .coverage import build_capabilities, load_discovery_report
 from .private_files import write_private_bytes as _write_private_bytes
 from .models import (
     AdminUser,
@@ -4089,6 +4091,105 @@ def traceroute(
     console.print(result, markup=False, emoji=False, highlight=False)
 
 
+# -------------------------------------------------------------- capabilities
+
+@app.command()
+def capabilities(
+    host: str = _host_opt(),
+    user: str = _user_opt(),
+    password: Optional[str] = _pwd_opt(),
+    insecure: bool = _insecure_opt(),
+    report: str = typer.Option(
+        "endpoints.json",
+        "--report",
+        "-r",
+        help="Optional local discovery report used to mark observed endpoints.",
+    ),
+):
+    """Show firmware identity and the read/write capability inventory.
+
+    This command performs only authenticated GET requests. If ``--report``
+    points to an existing discovery JSON, its endpoint observations are merged
+    into the output without exposing report samples or serial numbers.
+    """
+    api = get_api(host, user, password, insecure)
+    try:
+        try:
+            dev = api.get_device_info() or {}
+        except Exception:
+            dev = {}
+
+        report_path = Path(report)
+        discovery = None
+        if report_path.exists():
+            try:
+                discovery = load_discovery_report(report_path)
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                message = f"invalid discovery report {report}: {exc}"
+                if state.json:
+                    _emit_json({"ok": False, "error": message})
+                else:
+                    console.print(f"[red]Capabilities failed:[/red] {message}")
+                raise typer.Exit(code=1)
+
+        device = {
+            "host": getattr(api, "base_url", host),
+            "model": dev.get("ModelName"),
+            "software": dev.get("SoftwareVer"),
+            "hardware": dev.get("HardwareVer"),
+            "boot": dev.get("BootVer"),
+            "firmware_date": dev.get("VerDate"),
+        }
+        payload = build_capabilities(
+            device=device,
+            discovery=discovery,
+            discovery_path=report_path if discovery is not None else None,
+        )
+
+        if state.json:
+            _emit_json(payload)
+            return
+
+        table = Table(title="H388X capabilities")
+        table.add_column("Parameter", style="cyan")
+        table.add_column("Value", style="magenta")
+        for key, label in (
+            ("model", "Model"),
+            ("software", "Firmware"),
+            ("hardware", "Hardware"),
+            ("boot", "Boot"),
+            ("firmware_date", "Firmware date"),
+        ):
+            table.add_row(label, str(payload["device"].get(key) or "N/A"))
+        table.add_row("Catalog entries", str(payload["coverage"]["total"]))
+        if payload["discovery"] is not None:
+            stats = payload["discovery"]["stats"]
+            table.add_row("Discovery endpoints", str(stats.get("endpoint_count", "N/A")))
+            table.add_row("Discovery with data", str(stats.get("endpoints_with_data", "N/A")))
+        console.print(table)
+
+        status_table = Table(title="Coverage by status")
+        status_table.add_column("Status", style="cyan")
+        status_table.add_column("Count", style="magenta")
+        for status, count in payload["coverage"]["by_status"].items():
+            status_table.add_row(status, str(count))
+        console.print(status_table)
+        gaps = [
+            item for item in payload["capabilities"]
+            if item["status"] != "covered"
+        ]
+        if gaps:
+            gap_table = Table(title="Open gaps")
+            gap_table.add_column("Capability", style="cyan")
+            gap_table.add_column("Status", style="yellow")
+            gap_table.add_column("Page", style="magenta")
+            for item in gaps:
+                gap_table.add_row(item["id"], item["status"], item["page"])
+            console.print(gap_table)
+    finally:
+        api.close()
+
+
 # ------------------------------------------------------------------- discover
 
 @app.command()
@@ -4115,6 +4216,11 @@ def discover(
         min=1,
         help="Per-endpoint response sample size (chars) saved in the report.",
     ),
+    previous: Optional[str] = typer.Option(
+        None,
+        "--previous",
+        help="Compare the new report with a previous discovery JSON file.",
+    ),
 ):
     """
     Spider the modem web UI and dump every reachable
@@ -4123,6 +4229,18 @@ def discover(
     Read-only: only HTTP GET, mutating-looking tags are listed but not fetched.
     Useful to extend the CLI with new commands without guessing endpoints.
     """
+    previous_report: Optional[Dict[str, Any]] = None
+    if previous:
+        try:
+            previous_report = load_discovery_report(Path(previous))
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            message = f"invalid previous discovery report {previous}: {exc}"
+            if state.json:
+                _emit_json({"ok": False, "error": message})
+            else:
+                console.print(f"[red]Discovery failed:[/red] {message}")
+            raise typer.Exit(code=1)
+
     api = get_api(host, user, password, insecure)
 
     progress_msg = {"text": "starting..."}
@@ -4172,6 +4290,11 @@ def discover(
             "boot": dev.get("BootVer"),
             "firmware_date": dev.get("VerDate"),
         }
+        result["comparison"] = (
+            compare_discovery_reports(result, previous_report)
+            if previous_report is not None
+            else None
+        )
 
         # Samples may contain serials and authenticated response data.
         payload = (json.dumps(result, indent=2, default=str) + "\n").encode("utf-8")
@@ -4192,7 +4315,11 @@ def discover(
             raise typer.Exit(code=1)
 
         if state.json:
-            _emit_json({"output": output, "stats": result["stats"]})
+            _emit_json({
+                "output": output,
+                "stats": result["stats"],
+                "comparison": result["comparison"],
+            })
             return
 
         s = result["stats"]
@@ -4213,6 +4340,13 @@ def discover(
         for k, v in s["skipped"].items():
             table.add_row(f"  skipped: {k}", str(v))
         console.print(table)
+        if result["comparison"] is not None:
+            c = result["comparison"]["summary"]
+            console.print(
+                "[cyan]Comparison:[/cyan] "
+                f"+{c['added']} added, -{c['removed']} removed, "
+                f"~{c['changed']} changed"
+            )
         console.print(
             "[dim]Tip: send the JSON file back so we can map new commands "
             "to the discovered endpoints.[/dim]"

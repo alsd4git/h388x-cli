@@ -71,6 +71,87 @@ _MUTATING_TOKENS = (
 # Asset extensions worth fetching to mine for endpoint references.
 _ASSET_EXTS = (".html", ".htm", ".js", ".lua", ".css", ".json", ".xml")
 
+_DIFF_FIELDS = (
+    "fetched", "skipped_reason", "status", "content_type", "shape",
+    "root_element", "instance_count", "field_names", "error",
+)
+
+
+def _endpoint_identity(endpoint: Dict[str, Any]) -> Tuple[str, str, Tuple[Tuple[str, str], ...]]:
+    extras = endpoint.get("extras")
+    if not isinstance(extras, dict):
+        extras = {}
+    return (
+        str(endpoint.get("type", "")),
+        str(endpoint.get("tag", "")),
+        tuple(sorted((str(k), str(v)) for k, v in extras.items())),
+    )
+
+
+def _endpoint_diff_view(endpoint: Dict[str, Any]) -> Dict[str, Any]:
+    """Return only stable, non-sample fields for a report comparison."""
+    return {
+        "type": endpoint.get("type"),
+        "tag": endpoint.get("tag"),
+        "extras": endpoint.get("extras") or {},
+        **{field: endpoint.get(field) for field in _DIFF_FIELDS},
+    }
+
+
+def compare_discovery_reports(
+    current: Dict[str, Any], previous: Dict[str, Any]
+) -> Dict[str, Any]:
+    """Compare endpoint observations from two discovery reports.
+
+    ``discovered_in``, samples and byte counts are intentionally ignored:
+    those fields vary with crawl order or live counters and would make a
+    comparison noisy. The output is deterministic and safe to render in
+    human or JSON mode.
+    """
+    current_rows = {
+        _endpoint_identity(row): row
+        for row in current.get("endpoints", [])
+        if isinstance(row, dict)
+    }
+    previous_rows = {
+        _endpoint_identity(row): row
+        for row in previous.get("endpoints", [])
+        if isinstance(row, dict)
+    }
+    added_keys = sorted(set(current_rows) - set(previous_rows))
+    removed_keys = sorted(set(previous_rows) - set(current_rows))
+    common_keys = sorted(set(current_rows) & set(previous_rows))
+
+    changed: List[Dict[str, Any]] = []
+    for key in common_keys:
+        old = _endpoint_diff_view(previous_rows[key])
+        new = _endpoint_diff_view(current_rows[key])
+        fields = {
+            field: {"previous": old.get(field), "current": new.get(field)}
+            for field in _DIFF_FIELDS
+            if old.get(field) != new.get(field)
+        }
+        if fields:
+            changed.append({
+                "key": {
+                    "type": key[0],
+                    "tag": key[1],
+                    "extras": dict(key[2]),
+                },
+                "fields": fields,
+            })
+
+    return {
+        "summary": {
+            "added": len(added_keys),
+            "removed": len(removed_keys),
+            "changed": len(changed),
+        },
+        "added": [_endpoint_diff_view(current_rows[key]) for key in added_keys],
+        "removed": [_endpoint_diff_view(previous_rows[key]) for key in removed_keys],
+        "changed": changed,
+    }
+
 
 # ------------------------------------------------------------------ models
 
