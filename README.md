@@ -111,6 +111,10 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 |---------|--------------|
 | `discover` | Spider the WebUI and dump every reachable `_type=...&_tag=...` endpoint to `endpoints.json` (gitignored, contains modem serial). |
 
+The current page/endpoint/CLI coverage inventory is maintained in
+[`docs/webui-coverage.md`](docs/webui-coverage.md). It separates implemented
+reads and writes from actions that still require a single-change HAR.
+
 ## Installation
 
 Using [uv](https://github.com/astral-sh/uv):
