@@ -80,6 +80,40 @@ def test_info_json(fake_api):
     fake_api.close.assert_called_once()
 
 
+def test_capabilities_json_is_versioned_and_redacts_serial(fake_api, tmp_path):
+    fake_api.base_url = "http://modem.test"
+    fake_api.get_device_info.return_value = {
+        "ModelName": "H388X",
+        "SerialNumber": "SECRET-SERIAL",
+        "SoftwareVer": "AGZHM_1.4.4",
+    }
+    report = tmp_path / "endpoints.json"
+    report.write_text(
+        json.dumps({
+            "device": {"serial": "SECRET-SERIAL"},
+            "stats": {"endpoint_count": 1, "endpoints_with_data": 1},
+            "endpoints": [{
+                "type": "menuData",
+                "tag": "devmgr_statusmgr_lua.lua",
+                "extras": {},
+            }],
+        }),
+        encoding="utf-8",
+    )
+
+    result = runner.invoke(app, ["--json", "capabilities", "--report", str(report)])
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["schema_version"] == "1"
+    assert payload["device"]["software"] == "AGZHM_1.4.4"
+    assert payload["discovery"]["stats"]["endpoint_count"] == 1
+    assert "SECRET-SERIAL" not in result.stdout
+    info = next(item for item in payload["capabilities"] if item["id"] == "device.info")
+    assert info["detected"] is True
+    fake_api.close.assert_called_once()
+
+
 def test_ping_json(fake_api):
     fake_api.ping.return_value = (True, "4 packets transmitted, 4 received")
     result = runner.invoke(app, ["--json", "ping", "1.1.1.1"])

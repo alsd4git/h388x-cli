@@ -109,11 +109,16 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 
 | Command | What it does |
 |---------|--------------|
-| `discover` | Spider the WebUI and dump every reachable `_type=...&_tag=...` endpoint to `endpoints.json` (gitignored, contains modem serial). |
+| `discover` | Spider the WebUI and dump every reachable `_type=...&_tag=...` endpoint to `endpoints.json` (gitignored, contains modem serial). `--previous FILE` adds a deterministic added/removed/changed comparison. |
+| `capabilities` | Show firmware identity, the versioned WebUI capability catalog, coverage status counts, and (when `endpoints.json` exists) which endpoint tags were observed. |
 
 The current page/endpoint/CLI coverage inventory is maintained in
 [`docs/webui-coverage.md`](docs/webui-coverage.md). It separates implemented
 reads and writes from actions that still require a single-change HAR.
+
+The machine-readable source used by `capabilities` is kept in
+`h388x_cli/coverage.py`; its output includes `schema_version` so automation
+can reject incompatible formats explicitly.
 
 ## Installation
 

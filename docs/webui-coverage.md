@@ -137,9 +137,14 @@ qui per evitare di trasformare dati della rete attiva in fixture o log.
 
 - Endpoint e parent view: costanti `ZTEH388XAPI` e `ROADMAP.md`.
 - Comandi: `README.md` e registrazione Typer in `h388x_cli/cli.py`.
+- Catalogo macchina: `h388x_cli/coverage.py`, esposto da `h388x capabilities`
+  con `schema_version=1`.
 - Stato live: da aggiornare dopo ogni discovery con `h388x discover`; il file
   `endpoints.json` resta locale/gitignored perché può contenere seriale e
   campioni autenticati.
+- Confronto: `h388x discover --previous FILE` salva nel report una sezione
+  `comparison` con endpoint aggiunti, rimossi o cambiati; campioni e byte non
+  vengono considerati differenze.
 - Una riga “da acquisire tramite HAR” passa a “coperta” solo dopo: fixture
   offline minima, lettura prima della scrittura, dry-run/conferma per azioni
   rischiose e verifica live con ripristino dello stato iniziale.
