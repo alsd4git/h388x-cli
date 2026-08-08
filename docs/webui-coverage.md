@@ -21,6 +21,20 @@ prova live o una voce WebUI osservata come assente.
 
 `R` = lettura, `W` = scrittura/azione, `R/W` = entrambe.
 
+## Verifica live (Chrome, 2026-08-08)
+
+La sessione Chrome già autenticata sul modem attivo è stata usata soltanto per
+aprire le pagine e leggere il DOM. Non sono stati premuti pulsanti `Applica`,
+`Diagnosi`, `Riavvio`, `Backup`, `Logout` o controlli che cambiano lo stato.
+Sono stati confermati i menu visibili `Internet`, `Rete locale`, `VoIP` e
+`Gestione & Diagnosi`, oltre a `Topologia`.
+
+La verifica ha confermato anche la presenza live di form per firewall/DMZ,
+parental control, DDNS, radio WLAN, ACL, band steering/Easy Mesh, scheduler,
+codec e mapping VoIP, FTP, UPnP, DMS, IPv6, eDNS0, timeout, account, backup e
+diagnostica. I valori e gli identificativi dei dispositivi non sono riportati
+qui per evitare di trasformare dati della rete attiva in fixture o log.
+
 ## Matrice pagina → endpoint → comando
 
 | Pagina WebUI (`menuView`) | Endpoint (`menuData`/`hiddenData`) | Operazione | Comando CLI | Stato | Note |
@@ -39,7 +53,7 @@ prova live o una voce WebUI osservata come assente.
 | `wlanBasic` | `wlan_sssidconf_lua.lua` | R | `wifi-ssid-config` | coperta | Include visibilità SSID e `MaxUserNum`. |
 | `wlanBasic` | `wlan_basiconoff_lua.lua` | W | — | da acquisire tramite HAR | Toggle radio Wi-Fi. |
 | `wlanBasic` | `wlan_sssidconf_lua.lua` | W | — | da acquisire tramite HAR | SSID, password, visibilità e massimo client. |
-| `wlanAdvanced` | `wlan_basicadconf_lua.lua` | W | — | da acquisire tramite HAR | Modifica configurazione avanzata radio. |
+| `wlanBasic` | `wlan_basicadconf_lua.lua` | W | — | da acquisire tramite HAR | Modifica configurazione avanzata radio. |
 | `filterCriteria` | `firewall_filterglobal_m.lua` | R | `firewall` | coperta | Toggle globale URL filtering e target. |
 | `filterCriteria` | `firewall_filterglobal_m.lua` | W | — | da acquisire tramite HAR | Toggle firewall/URL filtering. |
 | `filterCriteria` | `firewall_ipfilter_m.lua` | R/W | `firewall-ipfilter`, `firewall-ipfilter-add`, `firewall-ipfilter-del`, `firewall-ipfilter-toggle` | coperta | Regole IP e toggle enable. |
@@ -99,9 +113,11 @@ prova live o una voce WebUI osservata come assente.
 | `rebootAndReset` | endpoint reset/factory | W | — | da acquisire tramite HAR | Reset di fabbrica; azione sensibile. |
 | `networkDiag` | `networkdiag_ping_lua.lua` | R/W | `ping` | coperta | Diagnostica asincrona dal modem; non modifica configurazione. |
 | `networkDiag` | `networkdiag_traceroute_lua.lua` | R/W | `traceroute` | coperta | Diagnostica asincrona dal modem; non modifica configurazione. |
+| `networkDiag` | diagnostica DSL (F4/F5, VPI/VCI) | R/W | — | da acquisire tramite HAR | Form presente live; non ancora mappato in `ZTEH388XAPI`. Non è stato avviato alcun test. |
 | `sntp` (`hiddenData`) | `sntp_data` | R | `sntp` | coperta | Endpoint hiddenData, senza arming di una view. |
 | `sntp` (`hiddenData`) | `sntp_data` | W | — | da acquisire tramite HAR | Server NTP, timezone e DST. |
 | `loginData` | `login_entry`, `logout_entry` | R/W | login automatico, `logout` | coperta | Sessione e cache locale; nessuna credenziale nel report. |
+| `Gestione Certificati` | endpoint non rilevato nel mapping corrente | R/W | — | da acquisire tramite HAR | Pagina presente live ma senza dati esposti nella vista iniziale; serve una cattura mirata prima di classificare lettura/scrittura. |
 | `upgrade` / firmware | endpoint di upload firmware | W | — | da acquisire tramite HAR | Non implementato; richiede fixture, backup, `--dry-run`/`--yes` e validazione live separata. |
 
 ## Gap prioritari risultanti
