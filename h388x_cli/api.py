@@ -1656,31 +1656,17 @@ class ZTEH388XAPI:
     # ------------------------------------------------------------------ reboot
 
     def reboot(self) -> bool:
-        try:
-            self.session.get(
-                f"{self.base_url}{self.REBOOT_VIEW_URL}",
-                headers=self.NO_CACHE,
-                timeout=8,
-            )
-            self.session.get(
-                f"{self.base_url}{self.REBOOT_URL}",
-                headers=self.NO_CACHE,
-                timeout=8,
-            )
-            payload = {
-                "IF_ACTION": "Restart",
-                "Btn_restart": "",
-                "_sessionTOKEN": self.session_token or "",
-            }
-            resp = self.session.post(
-                f"{self.base_url}{self.REBOOT_URL}",
-                data=payload,
-                headers=self.NO_CACHE,
-                timeout=8,
-            )
-            return resp.status_code == 200 and "ERR" not in resp.text.upper()[:200]
-        except requests.RequestException:
-            return False
+        # Reboot follows the same view-arming and rotating-CSRF-token flow as
+        # every other write action. The previous implementation reused the
+        # cached token after two GETs, so the modem rejected the POST as an
+        # expired page before it could restart.
+        ok, _body = self._post_action(
+            self.REBOOT_VIEW_URL,
+            self.REBOOT_URL,
+            action="Restart",
+            fields={"Btn_restart": ""},
+        )
+        return ok
 
     # -------------------------------------------------------- config backup
 
@@ -1884,12 +1870,18 @@ class ZTEH388XAPI:
         """
         if self.session_token:
             try:
+                # ``_sessionTOKEN`` rotates on authenticated requests. A
+                # token restored from the local cache can therefore be stale
+                # even though the SID cookie is still valid; refresh it before
+                # asking the modem to release the admin session.
+                self._fetch_fresh_session_token()
                 self.session.post(
                     f"{self.base_url}/?_type=loginData&_tag=logout_entry",
                     data={
                         "IF_LogOff": "1",
                         "_sessionTOKEN": self.session_token,
                     },
+                    headers=self.NO_CACHE,
                     timeout=8,
                 )
             except requests.RequestException:

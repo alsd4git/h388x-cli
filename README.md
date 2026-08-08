@@ -20,6 +20,7 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 | `stats` | DSL home-page summary (status, profile, sync rate, SNR margin, attenuation, power, uptime, FEC errors). Supports `--watch N` for live updates. |
 | `dsl-interface` | Full DSL PHY view (current/max rates per direction, interleave depth/delay, CRC/FEC counters, encapsulation, Showtime start). |
 | `wan` | WAN connections (public IPv4, gateway, DNS, uptime, services). `--all` includes disconnected ones. |
+| `renew-ip` | Non disponibile sul firmware AGZHM_1.4.4 osservato: la WAN è esposta in sola lettura, senza un’azione reconnect/renew affidabile. Il fallback `reboot` interrompe tutta la connettività. |
 | `mobile-wan` | 3G/4G USB dongle backup status (DongleStatus + operator/signal when plugged). |
 | `topology` | EasyMesh topology — controller + agent layers (`MGET_INST_NUM=0` when no satellites). |
 

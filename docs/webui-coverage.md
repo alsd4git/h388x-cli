@@ -35,6 +35,11 @@ codec e mapping VoIP, FTP, UPnP, DMS, IPv6, eDNS0, timeout, account, backup e
 diagnostica. I valori e gli identificativi dei dispositivi non sono riportati
 qui per evitare di trasformare dati della rete attiva in fixture o log.
 
+Il discovery corrente espone `wan_internet_lua.lua` come lettura delle
+connessioni (`ID_WAN_COMFIG`), ma non un endpoint di reconnect/renew PPPoE o
+DHCP. Per questo non viene aggiunto un falso `renew-ip`: il reboot resta
+l’unica azione nota, ed è volutamente distruttiva per la connettività.
+
 ## Matrice pagina → endpoint → comando
 
 | Pagina WebUI (`menuView`) | Endpoint (`menuData`/`hiddenData`) | Operazione | Comando CLI | Stato | Note |
