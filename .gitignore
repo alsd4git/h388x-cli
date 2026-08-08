@@ -68,3 +68,9 @@ firmware/
 
 # Discovery output (contains modem serial, fields, sample HTML/XML)
 endpoints.json
+
+# Sensitive local modem exports
+config-*.bin
+
+# Local research tools and checkouts
+tools/

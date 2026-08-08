@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import typer
@@ -20,6 +21,7 @@ from .devices import (
     reservations_export as _reservations_export,
 )
 from .discovery import Spider
+from .private_files import write_private_bytes as _write_private_bytes
 from .models import (
     AdminUser,
     ArpEntry,
@@ -192,7 +194,7 @@ def get_api(
     # login handshake entirely. The first authenticated request will either
     # succeed or hit ``SessionTimeout``, in which case the ``_menudata``
     # retry path re-runs ``login()`` once and refreshes the cache.
-    if api.session_token and api.session.cookies.get("SID"):
+    if api.has_cached_session:
         return api
 
     if state.json:
@@ -3983,8 +3985,21 @@ def config_backup(
         raise typer.Exit(code=1)
 
     data: bytes = result
-    with open(out, "wb") as fh:
-        fh.write(data)
+    try:
+        _write_private_bytes(Path(out), data)
+    except FileExistsError:
+        message = f"refusing to overwrite existing file: {out}"
+        if state.json:
+            _emit_json({"ok": False, "error": message})
+        else:
+            console.print(f"[red]Backup failed:[/red] {message}")
+        raise typer.Exit(code=1)
+    except OSError as exc:
+        if state.json:
+            _emit_json({"ok": False, "error": str(exc)})
+        else:
+            console.print(f"[red]Backup failed:[/red] {exc}")
+        raise typer.Exit(code=1)
     digest = hashlib.sha256(data).hexdigest()
 
     if state.json:
@@ -4089,14 +4104,15 @@ def discover(
         help="Where to write the discovery report (JSON).",
     ),
     max_requests: int = typer.Option(
-        400, "--max-requests", help="Stop after this many HTTP requests."
+        400, "--max-requests", min=1, help="Stop after this many HTTP requests."
     ),
     delay: float = typer.Option(
-        0.15, "--delay", help="Seconds to sleep between HTTP requests."
+        0.15, "--delay", min=0.0, help="Seconds to sleep between HTTP requests."
     ),
     sample_chars: int = typer.Option(
         600,
         "--sample-chars",
+        min=1,
         help="Per-endpoint response sample size (chars) saved in the report.",
     ),
 ):
@@ -4157,10 +4173,23 @@ def discover(
             "firmware_date": dev.get("VerDate"),
         }
 
-        # Write the file.
-        with open(output, "w", encoding="utf-8") as f:
-            json.dump(result, f, indent=2, default=str)
-            f.write("\n")
+        # Samples may contain serials and authenticated response data.
+        payload = (json.dumps(result, indent=2, default=str) + "\n").encode("utf-8")
+        try:
+            _write_private_bytes(Path(output), payload)
+        except FileExistsError:
+            message = f"refusing to overwrite existing file: {output}"
+            if state.json:
+                _emit_json({"ok": False, "error": message})
+            else:
+                console.print(f"[red]Discovery failed:[/red] {message}")
+            raise typer.Exit(code=1)
+        except OSError as exc:
+            if state.json:
+                _emit_json({"ok": False, "error": str(exc)})
+            else:
+                console.print(f"[red]Discovery failed:[/red] {exc}")
+            raise typer.Exit(code=1)
 
         if state.json:
             _emit_json({"output": output, "stats": result["stats"]})

@@ -13,6 +13,7 @@ touches a real modem.
 """
 
 import json
+import os
 from unittest.mock import MagicMock
 
 import pytest
@@ -111,3 +112,27 @@ def test_traceroute_json_passes_options(fake_api):
     fake_api.traceroute.assert_called_once_with(
         "1.1.1.1", max_hops=5, timeout_ms=5000, protocol="ICMP"
     )
+
+
+def test_config_backup_writes_private_new_file(fake_api, tmp_path):
+    output = tmp_path / "config.bin"
+    fake_api.download_config_backup.return_value = (True, b"modem-config")
+
+    result = runner.invoke(app, ["config", "backup", str(output)])
+
+    assert result.exit_code == 0, result.stdout
+    assert output.read_bytes() == b"modem-config"
+    assert os.stat(output).st_mode & 0o777 == 0o600
+    fake_api.close.assert_called_once()
+
+
+def test_config_backup_refuses_to_overwrite_existing_file(fake_api, tmp_path):
+    output = tmp_path / "config.bin"
+    output.write_bytes(b"keep me")
+    fake_api.download_config_backup.return_value = (True, b"new-config")
+
+    result = runner.invoke(app, ["--json", "config", "backup", str(output)])
+
+    assert result.exit_code == 1
+    assert json.loads(result.stdout)["ok"] is False
+    assert output.read_bytes() == b"keep me"

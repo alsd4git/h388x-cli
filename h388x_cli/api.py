@@ -354,6 +354,11 @@ class ZTEH388XAPI:
         """
         return any(c.name == "SID" for c in self.session.cookies)
 
+    @property
+    def has_cached_session(self) -> bool:
+        """Whether a token and at least one SID cookie are ready for reuse."""
+        return bool(self.session_token and self._has_sid_cookie())
+
     # ------------------------------------------------------------------ login
 
     def login(self) -> bool:
