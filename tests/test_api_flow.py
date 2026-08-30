@@ -70,6 +70,15 @@ ADMIN_USERS_XML = (
     "</ajax_response_xml_root>"
 )
 
+WIFI_CLIENTS_XML = (
+    "<ajax_response_xml_root>"
+    "<OBJ_ACCESSDEV_ID><Instance>"
+    "<ParaName>_InstID</ParaName><ParaValue>DEV.WIFI1</ParaValue>"
+    "<ParaName>MACAddress</ParaName><ParaValue>02:00:00:00:00:01</ParaValue>"
+    "</Instance></OBJ_ACCESSDEV_ID>"
+    "</ajax_response_xml_root>"
+)
+
 
 @responses.activate
 def test_get_admin_users_parses_row(api):
@@ -88,6 +97,25 @@ def test_get_admin_users_parses_row(api):
     )
     rows = api.get_admin_users(retry=False)
     assert rows == [{"_InstID": "IGD.AU1", "Username": "admin", "Right": "1"}]
+
+
+@responses.activate
+def test_get_wifi_clients_uses_required_arming_sequence(api):
+    responses.add(responses.GET, f"{HOST}{api.LOCALNET_VIEW_URL}", body="<root/>")
+    responses.add(responses.GET, f"{HOST}{api.WLAN_APS_URL}", body="<root/>")
+    responses.add(responses.GET, f"{HOST}{api.WIFI_CLIENTS_URL}", body=WIFI_CLIENTS_XML)
+
+    rows = api.get_wifi_clients(retry=False)
+
+    assert rows == [{
+        "_InstID": "DEV.WIFI1",
+        "MACAddress": "02:00:00:00:00:01",
+    }]
+    assert [call.request.url for call in responses.calls] == [
+        f"{HOST}{api.LOCALNET_VIEW_URL}",
+        f"{HOST}{api.WLAN_APS_URL}",
+        f"{HOST}{api.WIFI_CLIENTS_URL}",
+    ]
 
 
 @responses.activate

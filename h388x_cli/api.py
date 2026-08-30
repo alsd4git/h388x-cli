@@ -629,9 +629,39 @@ class ZTEH388XAPI:
         )
 
     def get_wifi_clients(self, retry: bool = True) -> List[Dict[str, str]]:
-        return self._menudata(
-            self.LOCALNET_VIEW_URL, self.WIFI_CLIENTS_URL, "OBJ_ACCESSDEV_ID", retry
-        )
+        """Return Wi-Fi clients after reproducing the WebUI arming sequence.
+
+        The TIM firmware rejects ``accessdev_ssiddev_lua.lua`` on some session
+        states unless ``localNetStatus`` and ``wlan_status_lua.lua`` are fetched
+        immediately beforehand.
+        """
+        try:
+            self.session.get(
+                f"{self.base_url}{self.LOCALNET_VIEW_URL}",
+                headers=self.NO_CACHE,
+                timeout=8,
+            )
+            wlan = self.session.get(
+                f"{self.base_url}{self.WLAN_APS_URL}",
+                headers=self.NO_CACHE,
+                timeout=8,
+            )
+            if self._is_session_expired(wlan.text):
+                if retry and self.login():
+                    return self.get_wifi_clients(retry=False)
+                return []
+            clients = self.session.get(
+                f"{self.base_url}{self.WIFI_CLIENTS_URL}",
+                headers=self.NO_CACHE,
+                timeout=8,
+            )
+            if self._is_session_expired(clients.text):
+                if retry and self.login():
+                    return self.get_wifi_clients(retry=False)
+                return []
+            return self._parse_instances(clients.text, "OBJ_ACCESSDEV_ID")
+        except requests.RequestException:
+            return []
 
     # ---------------------------------------------------------------- Wi-Fi
 
