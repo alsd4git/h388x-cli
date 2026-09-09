@@ -20,7 +20,7 @@ instead of pretty tables, suitable for piping into `jq` or scripts.
 | `stats` | DSL home-page summary (status, profile, sync rate, SNR margin, attenuation, power, uptime, FEC errors). Supports `--watch N` for live updates. |
 | `dsl-interface` | Full DSL PHY view (current/max rates per direction, interleave depth/delay, CRC/FEC counters, encapsulation, Showtime start). |
 | `wan` | WAN connections (public IPv4, gateway, DNS, uptime, services). `--all` includes disconnected ones. |
-| `renew-ip` | Non disponibile sul firmware AGZHM_1.4.4 osservato: la WAN è esposta in sola lettura, senza un’azione reconnect/renew affidabile. Il fallback `reboot` interrompe tutta la connettività. |
+| `renew-ip` | Not available on the observed AGZHM_1.4.4 firmware: WAN is read-only and no reliable reconnect/renew action was found. The `reboot` fallback interrupts all connectivity. |
 | `mobile-wan` | 3G/4G USB dongle backup status (DongleStatus + operator/signal when plugged). |
 | `topology` | EasyMesh topology — controller + agent layers (`MGET_INST_NUM=0` when no satellites). |
 
@@ -325,7 +325,7 @@ Released under the [MIT License](./LICENSE).
 
 ## Troubleshooting
 
-- **Login failed / "Il sistema non è gestibile"**: the modem allows a
+- **Login failed / "The system cannot be managed"**: the modem allows a
   single admin session. Log out from the WebUI in your browser before
   running the CLI. After repeated failed logins the firmware applies a
   temporary lockout — wait a couple of minutes and retry.
@@ -340,20 +340,20 @@ Released under the [MIT License](./LICENSE).
 
 ## Inspirations & Credits
 
-Questo progetto è stato realizzato analizzando e integrando le logiche
-di reverse engineering dei seguenti progetti della community:
+This project was built by studying and integrating reverse-engineering work
+from the following community projects:
 
 - **[masoneff3/ha_zteh388x](https://github.com/masoneff3/ha_zteh388x)** —
-  Riferimento principale per il protocollo di autenticazione e per gli
-  endpoint XML delle statistiche DSL e WAN.
+  Primary reference for the authentication protocol and the XML endpoints
+  used for DSL and WAN statistics.
 - **[Kioubit/ZTE_H1600-routerAPI](https://github.com/Kioubit/ZTE_H1600-routerAPI)** —
-  Riferimento per gli endpoint di reboot (`devmgr_restartmgr_lua.lua`),
-  DHCP leases, host LAN/Wi-Fi e gestione dei token CSRF rotanti.
+  Reference for the reboot endpoint (`devmgr_restartmgr_lua.lua`), DHCP
+  leases, LAN/Wi-Fi hosts, and rotating CSRF tokens.
 - **[sioakim/zte-router-api](https://github.com/sioakim/zte-router-api)** —
-  Riferimento per la lista dispositivi homepage e altri endpoint dei
-  modem ZTE F8648P (stessa famiglia firmware).
+  Reference for the homepage device list and other endpoints on ZTE F8648P
+  modems from the same firmware family.
 - **[zte-config-utility](https://github.com/mkst/zte-config-utility)** —
-  Struttura generale dei dati dei modem ZTE.
-- **[Community Fibra.click](https://fibra.click/)** — Discussioni tecniche
-  sui firmware AGZHM del TIM HUB+, in particolare il
-  [thread sull'integrazione Home Assistant](https://forum.fibra.click/d/63226-integrazione-home-assistant-tim-hub-zte-h388x/10).
+  General structure of ZTE modem data.
+- **[Fibra.click community](https://fibra.click/)** — Technical discussions
+  about TIM HUB+ AGZHM firmware, especially the
+  [Home Assistant integration thread](https://forum.fibra.click/d/63226-integrazione-home-assistant-tim-hub-zte-h388x/10).
