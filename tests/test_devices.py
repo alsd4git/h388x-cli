@@ -1,11 +1,13 @@
-"""Unit tests for the ``devices`` (device-naming, route A) CLI helpers.
+"""Unit tests for the ``devices`` (device-naming, route A) helpers.
 
-These exercise the pure merge/export/import-plan logic without any
-network. The actual writes are covered by ``test_api_flow.py``.
+These exercise merge/export/import planning and fail-safe bulk application
+without contacting a modem. HTTP write protocol coverage lives in
+``test_api_flow.py``.
 """
 
 from h388x_cli import cli
 from h388x_cli.devices import (
+    apply_import_plan,
     is_valid_mac,
     merge_devices,
     norm_mac,
@@ -21,6 +23,23 @@ def _client(**kw):
 
 def _binding(**kw):
     return DhcpBinding.model_validate(kw)
+
+
+class _FakeWriteApi:
+    def __init__(self, outcomes=None):
+        self.outcomes = iter(outcomes or [])
+        self.calls = []
+
+    def _result(self):
+        return next(self.outcomes, (True, "ok"))
+
+    def add_dhcp_reservation(self, *, mac, ip_address, name):
+        self.calls.append(("add", mac, ip_address, name))
+        return self._result()
+
+    def edit_dhcp_reservation(self, inst_id, *, name, ip_address):
+        self.calls.append(("edit", inst_id, ip_address, name))
+        return self._result()
 
 
 # --- _norm_mac --------------------------------------------------------------
@@ -154,18 +173,8 @@ def test_merge_skips_entries_without_mac():
 
 def test_export_sorts_by_ip_and_only_includes_mac_rows():
     bindings = [
-        _binding(
-            _OBJ_InstID="B",
-            Name="b",
-            IPAddr="192.168.1.200",
-            MACAddr="22:22",
-        ),
-        _binding(
-            _OBJ_InstID="A",
-            Name="a",
-            IPAddr="192.168.1.20",
-            MACAddr="11:11",
-        ),
+        _binding(_OBJ_InstID="B", Name="b", IPAddr="192.168.1.100", MACAddr="22:22"),
+        _binding(_OBJ_InstID="A", Name="a", IPAddr="192.168.1.20", MACAddr="11:11"),
         _binding(_OBJ_InstID="C", Name="no-mac", IPAddr="192.168.1.5"),
     ]
 
@@ -173,7 +182,7 @@ def test_export_sorts_by_ip_and_only_includes_mac_rows():
 
     assert out == [
         {"mac": "11:11", "ip": "192.168.1.20", "name": "a"},
-        {"mac": "22:22", "ip": "192.168.1.200", "name": "b"},
+        {"mac": "22:22", "ip": "192.168.1.100", "name": "b"},
     ]
 
 
@@ -192,25 +201,19 @@ def _existing():
 
 
 def test_plan_import_marks_identical_entry_unchanged():
-    entries = [
-        {"mac": "DE:AD:BE:EF:00:01", "ip": "192.168.1.20", "name": "NAS"}
-    ]
+    entries = [{"mac": "DE:AD:BE:EF:00:01", "ip": "192.168.1.20", "name": "NAS"}]
     plan = plan_import(entries, _existing())
     assert [p["action"] for p in plan] == ["unchanged"]
 
 
 def test_plan_import_is_idempotent_case_insensitive():
-    entries = [
-        {"mac": "de:ad:be:ef:00:01", "ip": "192.168.1.20", "name": "NAS"}
-    ]
+    entries = [{"mac": "de:ad:be:ef:00:01", "ip": "192.168.1.20", "name": "NAS"}]
     plan = plan_import(entries, _existing())
     assert plan[0]["action"] == "unchanged"
 
 
 def test_plan_import_detects_rename_as_edit():
-    entries = [
-        {"mac": "DE:AD:BE:EF:00:01", "ip": "192.168.1.20", "name": "NAS2"}
-    ]
+    entries = [{"mac": "DE:AD:BE:EF:00:01", "ip": "192.168.1.20", "name": "NAS2"}]
     plan = plan_import(entries, _existing())
     assert plan[0]["action"] == "edit"
     assert plan[0]["id"] == "DEV.V4DP.Sr.Pl1.Bd1"
@@ -218,13 +221,7 @@ def test_plan_import_detects_rename_as_edit():
 
 
 def test_plan_import_new_mac_is_add():
-    entries = [
-        {
-            "mac": "AA:BB:CC:00:11:22",
-            "ip": "192.168.1.50",
-            "name": "Laptop",
-        }
-    ]
+    entries = [{"mac": "AA:BB:CC:00:11:22", "ip": "192.168.1.50", "name": "Laptop"}]
     plan = plan_import(entries, _existing())
     assert plan[0]["action"] == "add"
     assert plan[0]["id"] is None
@@ -238,8 +235,7 @@ def test_plan_import_missing_mac_is_error():
 
 def test_plan_import_invalid_mac_is_error():
     plan = plan_import(
-        [{"mac": "not-a-mac", "ip": "192.168.1.30", "name": "x"}],
-        _existing(),
+        [{"mac": "not-a-mac", "ip": "192.168.1.30", "name": "x"}], _existing()
     )
     assert plan[0]["action"] == "error"
     assert "invalid mac" in plan[0]["error"]
@@ -249,6 +245,24 @@ def test_plan_import_missing_ip_on_add_is_error():
     plan = plan_import([{"mac": "99:99:99:99:99:99", "name": "x"}], _existing())
     assert plan[0]["action"] == "error"
     assert "ip" in plan[0]["error"]
+
+
+def test_plan_import_rejects_invalid_ip_before_apply():
+    plan = plan_import(
+        [{"mac": "aa:bb:cc:00:11:22", "ip": "999.1.1.1", "name": "Laptop"}],
+        _existing(),
+    )
+    assert plan[0]["action"] == "error"
+    assert "IPv4" in plan[0]["error"]
+
+
+def test_plan_import_rejects_missing_name_before_apply():
+    plan = plan_import(
+        [{"mac": "aa:bb:cc:00:11:22", "ip": "192.168.1.50", "name": ""}],
+        _existing(),
+    )
+    assert plan[0]["action"] == "error"
+    assert "name" in plan[0]["error"]
 
 
 def test_plan_import_empty_ip_on_existing_keeps_current_ip():
@@ -267,19 +281,80 @@ def test_plan_import_non_object_entry_is_error():
 def test_plan_import_duplicate_mac_is_error_after_normalization():
     plan = plan_import(
         [
-            {
-                "mac": "AA-BB-CC-00-11-22",
-                "ip": "192.168.1.50",
-                "name": "Laptop",
-            },
-            {
-                "mac": "aa:bb:cc:00:11:22",
-                "ip": "192.168.1.51",
-                "name": "Laptop2",
-            },
+            {"mac": "AA-BB-CC-00-11-22", "ip": "192.168.1.50", "name": "Laptop"},
+            {"mac": "aa:bb:cc:00:11:22", "ip": "192.168.1.51", "name": "Laptop2"},
         ],
         _existing(),
     )
     assert plan[0]["action"] == "add"
     assert plan[1]["action"] == "error"
     assert "duplicate mac" in plan[1]["error"]
+
+
+# --- apply_import_plan ------------------------------------------------------
+
+
+def test_apply_import_plan_does_no_writes_when_preflight_has_errors():
+    plan = plan_import(
+        [
+            {"mac": "aa:bb:cc:00:11:22", "ip": "192.168.1.50", "name": "Laptop"},
+            {"mac": "bad", "ip": "192.168.1.60", "name": "Bad"},
+        ],
+        _existing(),
+    )
+    api = _FakeWriteApi()
+
+    ok, summary = apply_import_plan(api, plan)
+
+    assert ok is False
+    assert api.calls == []
+    assert summary == {
+        "applied": 0,
+        "failed": 0,
+        "skipped": 1,
+        "partial": False,
+        "preflight_errors": 1,
+    }
+    assert plan[0]["skipped"] == "preflight failed"
+
+
+def test_apply_import_plan_stops_after_first_failure_and_reports_partial_state():
+    plan = plan_import(
+        [
+            {"mac": "aa:bb:cc:00:11:22", "ip": "192.168.1.50", "name": "One"},
+            {"mac": "aa:bb:cc:00:11:23", "ip": "192.168.1.51", "name": "Two"},
+            {"mac": "aa:bb:cc:00:11:24", "ip": "192.168.1.52", "name": "Three"},
+        ],
+        _existing(),
+    )
+    api = _FakeWriteApi([(True, "ok"), (False, "firmware rejected write")])
+
+    ok, summary = apply_import_plan(api, plan)
+
+    assert ok is False
+    assert len(api.calls) == 2
+    assert summary == {
+        "applied": 1,
+        "failed": 1,
+        "skipped": 1,
+        "partial": True,
+        "preflight_errors": 0,
+    }
+    assert plan[0]["ok"] is True
+    assert plan[1]["ok"] is False
+    assert plan[2]["skipped"] == "previous write failed"
+
+
+def test_apply_import_plan_success_is_explicit():
+    plan = plan_import(
+        [{"mac": "aa:bb:cc:00:11:22", "ip": "192.168.1.50", "name": "Laptop"}],
+        _existing(),
+    )
+    api = _FakeWriteApi([(True, "ok")])
+
+    ok, summary = apply_import_plan(api, plan)
+
+    assert ok is True
+    assert summary["applied"] == 1
+    assert summary["failed"] == 0
+    assert summary["partial"] is False
