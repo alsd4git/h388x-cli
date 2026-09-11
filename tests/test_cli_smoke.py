@@ -109,7 +109,7 @@ def test_capabilities_json_is_versioned_and_redacts_serial(fake_api, tmp_path):
 
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
-    assert payload["schema_version"] == "1"
+    assert payload["schema_version"] == "2"
     assert payload["device"]["software"] == "AGZHM_1.4.4"
     assert payload["discovery"]["stats"]["endpoint_count"] == 1
     assert "SECRET-SERIAL" not in result.stdout

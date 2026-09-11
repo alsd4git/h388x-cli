@@ -121,6 +121,19 @@ The machine-readable source used by `capabilities` is kept in
 `h388x_cli/coverage.py`; its output includes `schema_version` so automation
 can reject incompatible formats explicitly.
 
+### Sensitive local output
+
+`discover` reports contain modem identifiers plus samples of authenticated WebUI
+responses; configuration backups can contain credentials or other private modem
+settings. Both commands write new files with private permissions and refuse to
+overwrite an existing path. Conventional names such as `endpoints*.json`,
+`h388x-discovery*.json`, `config-*.bin`, and `h388x-config*.bin` are ignored by
+this repository.
+
+If you choose an arbitrary custom `--output` or backup filename, treat that file
+as sensitive and add an explicit local ignore rule before working with Git. A
+`.gitignore` cannot safely anticipate every custom filename.
+
 ## Installation
 
 ### Tagged release with uv (recommended)

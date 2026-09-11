@@ -14,7 +14,7 @@ from typing import Any, Dict, Iterable, List, Optional
 import json
 
 
-COVERAGE_SCHEMA_VERSION = "1"
+COVERAGE_SCHEMA_VERSION = "2"
 
 STATUS_COVERED = "covered"
 STATUS_PARTIAL = "partial"
@@ -616,10 +616,19 @@ def build_capabilities(
     capabilities: List[Dict[str, Any]] = []
     for item in COVERAGE_CATALOG:
         capability = dict(item)
-        endpoints = capability.get("endpoints", [])
-        capability["detected"] = bool(endpoints) and any(
-            tag in tags for tag in endpoints
-        )
+        endpoints = list(capability.get("endpoints", []))
+        observed = [endpoint for endpoint in endpoints if endpoint in tags]
+        missing = [endpoint for endpoint in endpoints if endpoint not in tags]
+        if not observed:
+            detection = "none"
+        elif missing:
+            detection = "partial"
+        else:
+            detection = "complete"
+        capability["detected"] = bool(endpoints) and detection == "complete"
+        capability["detection"] = detection
+        capability["observed_endpoints"] = observed
+        capability["missing_endpoints"] = missing
         capabilities.append(capability)
 
     counts = Counter(item["status"] for item in capabilities)
