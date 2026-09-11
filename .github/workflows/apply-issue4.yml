@@ -42,7 +42,10 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add h388x_cli tests .github/workflows/tests.yml .github/workflows/release.yml RELEASING.md pyproject.toml
+          # Workflow files are intentionally not staged here: the Actions token
+          # cannot update workflows. They are applied separately via GitHub after
+          # this already-validated source refactor is committed.
+          git add h388x_cli tests RELEASING.md pyproject.toml
           git diff --cached --check
           git commit -m "refactor: split API domains and device CLI (#4)"
           git push origin HEAD:improve/h388x-hardening-release
