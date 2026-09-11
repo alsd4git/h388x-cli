@@ -20,7 +20,9 @@ jobs:
           version: latest-known
           enable-cache: true
       - name: Apply issue #1 source and tests
-        run: python .github/scripts/apply_issue1.py
+        run: |
+          python .github/scripts/apply_issue1.py
+          python .github/scripts/fix_issue1_legacy_tests.py
       - name: Validate issue #1 behavior
         run: |
           uv sync --locked --dev
@@ -31,7 +33,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add h388x_cli/api.py h388x_cli/cli.py pyproject.toml tests/test_api_flow.py tests/test_error_semantics.py
+          git add h388x_cli/api.py h388x_cli/cli.py pyproject.toml tests/test_api_flow.py tests/test_error_semantics.py tests/test_parsers.py
           git diff --cached --check
           git commit -m "fix: make HTTP and parse failures explicit (#1)"
           git push origin HEAD:improve/h388x-hardening-release
