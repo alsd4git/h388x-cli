@@ -195,3 +195,98 @@ def test_discover_previous_emits_comparison(monkeypatch, tmp_path):
     }
     saved = json.loads(output.read_text(encoding="utf-8"))
     assert saved["comparison"] == payload["comparison"]
+
+
+def test_endpoint_url_encodes_extra_query_values_without_mangling_tag():
+    ep = Endpoint(
+        type="menuData",
+        tag="foo/bar.lua",
+        extras={"name": "a b&c", "value": "x=y"},
+    )
+    assert ep.url() == "/?_type=menuData&_tag=foo/bar.lua&name=a%20b%26c&value=x%3Dy"
+
+
+def test_asset_paths_resolve_relative_to_referring_asset():
+    assert Spider._normalize_path("../common/app.js", "/js/pages/status.html") == "/js/common/app.js"
+    assert Spider._normalize_path("./widget.js?cache=1#x", "/js/pages/status.html") == "/js/pages/widget.js"
+    assert Spider._normalize_path("/root/app.js", "/js/pages/status.html") == "/root/app.js"
+    assert Spider._normalize_path("https://evil.example/x.js", "/js/pages/status.html") == ""
+    assert Spider._normalize_path("//evil.example/x.js", "/js/pages/status.html") == ""
+
+
+def test_mutating_classifier_uses_semantic_tokens_not_substrings():
+    assert Spider._looks_mutating("settings_status_lua.lua") is False
+    assert Spider._looks_mutating("wlan_setting_lua.lua") is False
+    assert Spider._looks_mutating("firewall_add_rule_lua.lua") is True
+    assert Spider._looks_mutating("do_download_usercfg.lua") is True
+    assert Spider._looks_mutating("devmgr_restartmgr_lua.lua") is True
+    assert Spider._looks_mutating("firmwareUpdate.lua") is True
+
+
+def test_session_timeout_relogin_retries_and_records_only_final_payload():
+    api = MagicMock()
+    api.base_url = "http://modem.test"
+    api.NO_CACHE = {}
+    timeout = MagicMock()
+    timeout.status_code = 200
+    timeout.headers = {"Content-Type": "text/xml"}
+    timeout.text = "<root>SessionTimeout</root>"
+    success = MagicMock()
+    success.status_code = 200
+    success.headers = {"Content-Type": "text/xml"}
+    success.text = "<root><OBJ_X></OBJ_X></root>"
+    api.session.get.side_effect = [timeout, success]
+    api._is_session_expired.side_effect = lambda body: "SessionTimeout" in body
+    api.login.return_value = True
+    spider = Spider(api, max_requests=2, delay=0)
+    ep = Endpoint(type="menuView", tag="statusMgr")
+
+    body = spider._do_fetch_endpoint(ep)
+
+    assert body == success.text
+    assert api.login.call_count == 1
+    assert api.session.get.call_count == 2
+    assert spider._requests_made == 2
+    assert ep.shape == "xml-empty"
+    assert ep.sample == success.text
+    assert ep.error is None
+
+
+def test_session_timeout_failed_relogin_is_recorded_as_error():
+    api = MagicMock()
+    api.base_url = "http://modem.test"
+    api.NO_CACHE = {}
+    response = MagicMock()
+    response.status_code = 200
+    response.headers = {"Content-Type": "text/xml"}
+    response.text = "<root>SessionTimeout</root>"
+    api.session.get.return_value = response
+    api._is_session_expired.return_value = True
+    api.login.return_value = False
+    spider = Spider(api, max_requests=2, delay=0)
+    ep = Endpoint(type="menuView", tag="statusMgr")
+
+    assert spider._do_fetch_endpoint(ep) is None
+    assert ep.shape == "session-timeout"
+    assert "re-login failed" in ep.error
+    assert spider._errors == 1
+
+
+def test_session_retry_respects_spider_request_budget():
+    api = MagicMock()
+    api.base_url = "http://modem.test"
+    api.NO_CACHE = {}
+    response = MagicMock()
+    response.status_code = 200
+    response.headers = {"Content-Type": "text/xml"}
+    response.text = "<root>SessionTimeout</root>"
+    api.session.get.return_value = response
+    api._is_session_expired.return_value = True
+    api.login.return_value = True
+    spider = Spider(api, max_requests=1, delay=0)
+    ep = Endpoint(type="menuView", tag="statusMgr")
+
+    assert spider._do_fetch_endpoint(ep) is None
+    assert api.session.get.call_count == 1
+    assert "request budget" in ep.error
+    assert spider._requests_made == 1

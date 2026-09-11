@@ -27,7 +27,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter, deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlencode, urljoin, urlsplit
 
 import requests
 
@@ -58,7 +58,7 @@ _RE_MENU_TREE = re.compile(
 
 # Conservative deny-list: if a ``_tag`` matches this, we record the URL
 # but do NOT GET it. Some routers run actions on GET as well as POST.
-_MUTATING_TOKENS = (
+_MUTATING_TOKENS = frozenset({
     "add", "set", "del", "delete", "remove", "update", "edit",
     "save", "submit", "apply", "action",
     "restart", "reboot", "reset", "logout", "logoff",
@@ -66,6 +66,15 @@ _MUTATING_TOKENS = (
     "factory", "default", "clear", "wipe", "backup", "restore",
     "start", "stop", "enable", "disable", "kick", "block",
     "ping", "trace", "diag", "test",
+})
+
+# A few AGZHM tags concatenate an action with a role suffix instead of using
+# an underscore (for example ``restartmgr``). Restrict prefix matching to
+# those known action families; importantly, generic ``set*`` is NOT here, so
+# read-only nouns such as ``setting`` / ``settings`` are not false positives.
+_MUTATING_COMPOUND_PREFIXES = (
+    "restartmgr", "rebootmgr", "resetmgr", "upgrademgr",
+    "download", "upload", "backup", "restore",
 )
 
 # Asset extensions worth fetching to mine for endpoint references.
@@ -187,10 +196,10 @@ class Endpoint:
     error: Optional[str] = None
 
     def url(self) -> str:
-        qs = f"_type={self.type}&_tag={self.tag}"
-        for k, v in self.extras.items():
-            qs += f"&{k}={v}"
-        return f"/?{qs}"
+        pairs = [("_type", self.type), ("_tag", self.tag), *self.extras.items()]
+        # Keep slash/dot readable in firmware tag names while encoding values
+        # that would otherwise corrupt the query string (spaces, &, =, ...).
+        return "/?" + urlencode(pairs, quote_via=quote, safe="/.")
 
     def key(self) -> Tuple[str, str, Tuple[Tuple[str, str], ...]]:
         return (self.type, self.tag, tuple(sorted(self.extras.items())))
@@ -335,7 +344,7 @@ class Spider:
     # ---------------------------------------------------------- assets
 
     def _enqueue_asset(self, path: str, source: str) -> None:
-        path = self._normalize_path(path)
+        path = self._normalize_path(path, source=source)
         if not path or path in self._visited_assets:
             return
         # Only follow local "interesting" assets, plus the bare root.
@@ -440,15 +449,29 @@ class Spider:
         return out
 
     @staticmethod
-    def _normalize_path(p: str) -> str:
+    def _normalize_path(p: str, source: str = "/") -> str:
+        """Resolve a local asset path relative to the document that linked it.
+
+        Absolute/external URLs are deliberately rejected: discovery only follows
+        same-origin relative/root-relative assets and strips query/fragment noise.
+        """
         if not p:
             return ""
-        # Drop query/fragment from asset URLs (we only want to mine static assets;
-        # endpoints are handled separately via _extract_endpoints).
-        s = urlsplit(p)
-        if s.scheme or s.netloc:
+        parsed = urlsplit(p)
+        if parsed.scheme or parsed.netloc:
             return ""
-        path = s.path or "/"
+
+        if p.startswith("/"):
+            joined = p
+        else:
+            base = source if source.startswith("/") else "/"
+            base_path = urlsplit(base).path or "/"
+            joined = urljoin(base_path, p)
+
+        resolved = urlsplit(joined)
+        if resolved.scheme or resolved.netloc:
+            return ""
+        path = resolved.path or "/"
         if not path.startswith("/"):
             path = "/" + path
         return path
@@ -510,8 +533,21 @@ class Spider:
 
     @staticmethod
     def _looks_mutating(tag: str) -> bool:
-        low = tag.lower()
-        return any(tok in low for tok in _MUTATING_TOKENS)
+        """Conservatively classify action-like endpoint tags.
+
+        Matching is token-based rather than raw substring-based, avoiding false
+        positives such as ``settings_status_lua.lua`` containing ``set``.
+        CamelCase action names are split before tokenization.
+        """
+        camel_split = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", tag)
+        tokens = re.findall(r"[a-z0-9]+", camel_split.lower())
+        if any(token in _MUTATING_TOKENS for token in tokens):
+            return True
+        return any(
+            token.startswith(prefix)
+            for token in tokens
+            for prefix in _MUTATING_COMPOUND_PREFIXES
+        )
 
     def _fetch_endpoint(self, ep: Endpoint) -> None:
         # If this is a menuData with a known parent view (from menuTreeJSON),
@@ -591,8 +627,10 @@ class Spider:
             self._endpoints[view.key()] = view
         self._do_fetch_endpoint(view)
 
-    def _do_fetch_endpoint(self, ep: Endpoint) -> Optional[str]:
-        """Single GET for an endpoint; updates ``ep`` in place. Returns body."""
+    def _do_fetch_endpoint(
+        self, ep: Endpoint, retry_session: bool = True
+    ) -> Optional[str]:
+        """GET one endpoint, recovering one expired authenticated session."""
         if self._requests_made >= self.max_requests:
             if not ep.fetched:
                 ep.skipped_reason = "request-budget"
@@ -604,16 +642,45 @@ class Spider:
             self._requests_made += 1
             attempted = True
             r = self.api.session.get(url, headers=self.api.NO_CACHE, timeout=8)
+            text = r.text
+
+            if self.api._is_session_expired(text):
+                if retry_session and self.api.login():
+                    # Re-arm menuData after login before replaying it; login resets
+                    # the per-session WebUI navigation state on AGZHM firmware.
+                    if ep.type == "menuData" and self._requests_made < self.max_requests:
+                        parent = self._data_parent_view.get(ep.tag)
+                        if parent:
+                            self._arm_view(parent, source=f"rearm-for:{ep.url()}")
+                        elif ep.tag.endswith("_homepage_lua.lua"):
+                            self._arm_view("homePage", source=f"rearm-for:{ep.url()}")
+                    if self._requests_made < self.max_requests:
+                        return self._do_fetch_endpoint(ep, retry_session=False)
+                    ep.error = "session recovered but request budget prevented retry"
+                else:
+                    ep.error = "session expired and automatic re-login failed"
+                ep.fetched = True
+                ep.status = r.status_code
+                ep.content_type = r.headers.get("Content-Type", "")
+                ep.bytes = len(text)
+                ep.sample = text[: self.sample_chars]
+                ep.shape = "session-timeout"
+                self._errors += 1
+                return None
+
             ep.fetched = True
             ep.status = r.status_code
             ep.content_type = r.headers.get("Content-Type", "")
-            text = r.text
             ep.bytes = len(text)
             ep.sample = text[: self.sample_chars]
+            if not 200 <= r.status_code < 400:
+                ep.error = f"HTTP {r.status_code}"
+                self._errors += 1
+                return None
             self._classify_body(ep, text)
             return text
-        except requests.RequestException as e:
-            ep.error = str(e)
+        except requests.RequestException as exc:
+            ep.error = str(exc)
             self._errors += 1
             return None
         finally:

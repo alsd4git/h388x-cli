@@ -263,6 +263,7 @@ def stats(
         "--watch",
         "-w",
         help="Refresh stats every N seconds (Ctrl+C to stop).",
+        min=0.1,
     ),
 ):
     """Display DSL line statistics (optionally live with --watch)."""
@@ -3862,7 +3863,14 @@ def health(
 def watch(
     ctx: typer.Context,
     interval: float = typer.Argument(
-        ..., help="Refresh every N seconds (decimals allowed)."
+        ...,
+        help="Refresh every N seconds (decimals allowed).",
+        min=0.1,
+    ),
+    keep_going: bool = typer.Option(
+        False,
+        "--keep-going",
+        help="Continue refreshing when the child command exits non-zero.",
     ),
     command: List[str] = typer.Argument(
         ...,
@@ -3874,16 +3882,12 @@ def watch(
 ):
     """Re-run any h388x command in a loop (Unix watch(1) style).
 
-    Spawns the CLI as a subprocess so it works with any existing
-    command without touching their implementations. Inherits the
-    session cache, so warm runs stay fast.
+    By default a failed child command stops the wrapper and propagates its
+    exit status. Use ``--keep-going`` only when repeated retries are intended.
     """
     import shutil
     import subprocess
 
-    # Resolve the entry point used by the user: prefer the installed
-    # ``h388x`` script (faster startup); fall back to the current
-    # Python interpreter + module form when running from source.
     h388x_bin = shutil.which("h388x")
     if h388x_bin:
         argv = [h388x_bin, *command]
@@ -3894,11 +3898,17 @@ def watch(
     try:
         while True:
             os.system(clear_cmd)
-            subprocess.run(argv)
+            result = subprocess.run(argv, check=False)
+            if result.returncode and not keep_going:
+                code = result.returncode if 1 <= result.returncode <= 255 else 1
+                raise typer.Exit(code=code)
+            if result.returncode and keep_going:
+                console.print(
+                    f"[yellow]Child command exited {result.returncode}; retrying.[/yellow]"
+                )
             time.sleep(interval)
     except KeyboardInterrupt:
         return
-
 
 # --------------------------------------------------------------------- logout
 
@@ -3909,21 +3919,56 @@ def logout(
     password: Optional[str] = _pwd_opt(),
     insecure: bool = _insecure_opt(),
 ):
-    """Log out of the modem and clear the cached session for this host."""
-    api = get_api(host, user, password, insecure)
+    """Log out of the modem and clear the cached session for this host.
+
+    A valid cached SID/token is enough: unlike ordinary commands, logout does
+    not require the admin password merely to reuse and release that session.
+    """
+    resolved_password = password or os.environ.get("H388X_PASSWORD") or ""
+    api = ZTEH388XAPI(
+        host=host,
+        username=user,
+        password=resolved_password,
+        verify_tls=not insecure,
+    )
     try:
+        if not api.has_cached_session:
+            if not resolved_password:
+                if state.json:
+                    _emit_json({
+                        "logout": "failed",
+                        "error": "no cached session and no password available",
+                    })
+                else:
+                    console.print(
+                        "[red]No cached session and no password available.[/red]"
+                    )
+                raise typer.Exit(code=1)
+            if not api.login():
+                if state.json:
+                    _emit_json({"logout": "failed", "error": "login failed"})
+                else:
+                    console.print("[red]Login failed.[/red]")
+                raise typer.Exit(code=1)
+
         api.logout()
         if state.json:
             _emit_json({"logout": "ok"})
         else:
             console.print("[green]Session terminated and cache cleared.[/green]")
+    except typer.Exit:
+        raise
     except Exception as exc:
         if state.json:
             _emit_json({"logout": "failed", "error": str(exc)})
         else:
             console.print(f"[red]Logout failed: {exc}[/red]")
         raise typer.Exit(code=1)
-
+    finally:
+        try:
+            api.close()
+        except Exception:
+            pass
 
 # --------------------------------------------------------------------- reboot
 
