@@ -20,6 +20,7 @@ jobs:
           enable-cache: true
       - run: uv sync --locked --dev
       - run: uv run ruff check h388x_cli tests
+      - run: uv run ruff format --check h388x_cli tests
 
   test:
     runs-on: ubuntu-latest
