@@ -22,45 +22,44 @@ cli_path.write_text(text, encoding="utf-8")
 # Real ranges retain their existing end and are still checked by PortForwardSpec.
 api_path = Path("h388x_cli/api.py")
 api = api_path.read_text(encoding="utf-8")
-needle = '''            try:
-                spec = PortForwardSpec(
-                    description=pick(description, "Description"),
-                    protocol=pick(protocol, "Protocol"),
-                    external_port=pick(external_port, "ExternalPort"),
-                    external_port_end=pick(external_port_end, "ExternalPortEndRange"),
+needle = '''        try:
+            spec = PortForwardSpec(
+                description=pick(description, "Description"),
+                protocol=pick(protocol, "Protocol"),
+                external_port=pick(external_port, "ExternalPort"),
+                external_port_end=pick(external_port_end, "ExternalPortEndRange"),
 '''
-replacement = '''            current_external_port = current.get("ExternalPort", "")
-            current_external_end = current.get("ExternalPortEndRange", "")
-            if external_port_end is not None:
-                target_external_end = external_port_end
-            elif external_port is not None and current_external_end == current_external_port:
-                target_external_end = external_port
-            else:
-                target_external_end = current_external_end
+replacement = '''        current_external_port = current.get("ExternalPort", "")
+        current_external_end = current.get("ExternalPortEndRange", "")
+        if external_port_end is not None:
+            target_external_end = external_port_end
+        elif external_port is not None and current_external_end == current_external_port:
+            target_external_end = external_port
+        else:
+            target_external_end = current_external_end
 
-            try:
-                spec = PortForwardSpec(
-                    description=pick(description, "Description"),
-                    protocol=pick(protocol, "Protocol"),
-                    external_port=pick(external_port, "ExternalPort"),
-                    external_port_end=target_external_end,
+        try:
+            spec = PortForwardSpec(
+                description=pick(description, "Description"),
+                protocol=pick(protocol, "Protocol"),
+                external_port=pick(external_port, "ExternalPort"),
+                external_port_end=target_external_end,
 '''
 if needle not in api:
     raise SystemExit("port-forward edit validation block not found")
 api = api.replace(needle, replacement, 1)
 api_path.write_text(api, encoding="utf-8")
 
-# Keep user-facing validation messages concise and preserve the terminology
-# already documented/tested by the CLI.
+# Keep user-facing validation messages concise and preserve terminology that
+# already appeared in the CLI/tests.
 validation_path = Path("h388x_cli/validation.py")
 validation = validation_path.read_text(encoding="utf-8")
 validation = validation.replace("must be TCP, UDP, or BOTH", "must be TCP/UDP/BOTH")
 validation = validation.replace("must be allow or deny", "must be allow/deny")
 validation_path.write_text(validation, encoding="utf-8")
 
-# MAC hex case is not semantically significant. Keep the protocol-flow tests
-# focused on field presence and value rather than the case chosen by the
-# canonicalizer.
+# MAC hex case is not semantically significant. Keep protocol-flow tests
+# focused on the field/value rather than the canonicalizer's letter case.
 test_path = Path("tests/test_api_flow.py")
 tests = test_path.read_text(encoding="utf-8")
 tests = tests.replace(
