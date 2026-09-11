@@ -38,7 +38,7 @@ Repository = "https://github.com/alsd4git/h388x-cli"
 Issues = "https://github.com/alsd4git/h388x-cli/issues"
 
 [project.scripts]
-h388x = "h388x_cli.cli:app"
+h388x = "h388x_cli.cli:run_cli"
 
 [tool.setuptools]
 packages = ["h388x_cli"]

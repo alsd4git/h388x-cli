@@ -13,6 +13,7 @@ import pytest
 import responses
 
 from h388x_cli.api import ZTEH388XAPI
+from h388x_cli.errors import ParseError, SessionExpiredError
 
 
 HOST = "http://modem.test"
@@ -39,20 +40,20 @@ def api(tmp_path):
 # --- session expired detection wired through _menudata ---------------------
 
 @responses.activate
-def test_menudata_returns_empty_on_session_timeout_when_no_relogin(api):
-    """If we say ``retry=False`` and the modem says SessionTimeout, we get []."""
+def test_menudata_raises_session_expired_when_retry_is_exhausted(api):
+    """An expired session is not a legitimate empty table."""
     view = f"{HOST}/?_type=menuView&_tag=accountMgr&Menu3Location=0"
     data = f"{HOST}/?_type=menuData&_tag=devauth_accountmgr_lua.lua"
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(responses.GET, data, body="<root>SessionTimeout</root>", status=200)
 
-    rows = api._menudata(
-        "/?_type=menuView&_tag=accountMgr&Menu3Location=0",
-        "/?_type=menuData&_tag=devauth_accountmgr_lua.lua",
-        "OBJ_USERINFO_ID",
-        retry=False,
-    )
-    assert rows == []
+    with pytest.raises(SessionExpiredError):
+        api._menudata(
+            "/?_type=menuView&_tag=accountMgr&Menu3Location=0",
+            "/?_type=menuData&_tag=devauth_accountmgr_lua.lua",
+            "OBJ_USERINFO_ID",
+            retry=False,
+        )
 
 
 # --- happy path against the admin-users endpoint ---------------------------
@@ -206,7 +207,7 @@ def test_get_topology_parses_json(api):
 
 
 @responses.activate
-def test_get_topology_returns_empty_on_invalid_json(api):
+def test_get_topology_raises_on_invalid_json(api):
     responses.add(
         responses.GET,
         f"{HOST}{api.TOPOLOGY_VIEW_URL}",
@@ -219,7 +220,8 @@ def test_get_topology_returns_empty_on_invalid_json(api):
         body="not json {{{",
         status=200,
     )
-    assert api.get_topology(retry=False) == {}
+    with pytest.raises(ParseError):
+        api.get_topology(retry=False)
 
 
 # --- hidden endpoint: SNTP -------------------------------------------------

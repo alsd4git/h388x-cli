@@ -6,11 +6,13 @@ import re
 import time
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from urllib.parse import urlsplit
 from typing import Optional, Dict, Any, List, Tuple
 
 import requests
 from pydantic import ValidationError
 
+from .errors import ParseError, ProtocolError, SessionExpiredError, TransportError
 from .validation import (
     DhcpReservationSpec,
     IpFilterSpec,
@@ -245,10 +247,17 @@ class ZTEH388XAPI:
         ``~/.cache/h388x-cli`` location (mostly useful for tests).
         """
         host = (host or "").strip()
-        if "://" in host:
-            self.base_url = host.rstrip("/")
-        else:
-            self.base_url = f"http://{host}".rstrip("/")
+        candidate = host if "://" in host else f"http://{host}"
+        parsed = urlsplit(candidate)
+        if parsed.scheme not in {"http", "https"}:
+            raise ProtocolError(f"unsupported modem URL scheme: {parsed.scheme!r}")
+        if not parsed.hostname:
+            raise ProtocolError("modem host is empty or invalid")
+        if parsed.username is not None or parsed.password is not None:
+            raise ProtocolError("modem URL must not contain user information")
+        if parsed.path not in {"", "/"} or parsed.query or parsed.fragment:
+            raise ProtocolError("modem URL must contain only scheme, host and optional port")
+        self.base_url = f"{parsed.scheme}://{parsed.netloc}"
         self.username = username
         self.password = password
         self.session = requests.Session()
@@ -432,14 +441,29 @@ class ZTEH388XAPI:
 
     @classmethod
     def _parse_instances(cls, xml_text: str, root_element: str) -> List[Dict[str, str]]:
+        """Parse the standard Instance/ParaName/ParaValue envelope.
+
+        A syntactically valid response with no matching instances is a real empty
+        result. Malformed XML or mismatched name/value cardinality is a protocol
+        failure and must never be reported as an empty table.
+        """
         try:
             tree = ET.fromstring(xml_text)
-        except ET.ParseError:
-            return []
+        except ET.ParseError as exc:
+            raise ParseError(f"invalid XML while parsing {root_element}: {exc}") from exc
+
         out: List[Dict[str, str]] = []
-        for instance in tree.findall(f".//{root_element}/Instance"):
-            names = [cls._strip_prefix(n.text or "") for n in instance.findall("ParaName")]
-            values = [v.text or "" for v in instance.findall("ParaValue")]
+        for index, instance in enumerate(tree.findall(f".//{root_element}/Instance")):
+            names = [
+                cls._strip_prefix(node.text or "")
+                for node in instance.findall("ParaName")
+            ]
+            values = [node.text or "" for node in instance.findall("ParaValue")]
+            if len(names) != len(values):
+                raise ParseError(
+                    f"malformed {root_element} instance {index}: "
+                    f"{len(names)} ParaName values but {len(values)} ParaValue values"
+                )
             out.append(dict(zip(names, values)))
         return out
 
@@ -447,6 +471,19 @@ class ZTEH388XAPI:
     def _is_session_expired(text: str) -> bool:
         return "SessionTimeout" in text
 
+    @staticmethod
+    def _require_http_success(resp: requests.Response, context: str) -> None:
+        if 200 <= resp.status_code < 400:
+            return
+        raise ProtocolError(f"{context}: HTTP {resp.status_code}")
+
+    def _get_response(self, url: str, *, timeout: float = 8) -> requests.Response:
+        try:
+            resp = self.session.get(url, headers=self.NO_CACHE, timeout=timeout)
+        except requests.RequestException as exc:
+            raise TransportError(f"GET {url} failed: {exc}") from exc
+        self._require_http_success(resp, f"GET {url}")
+        return resp
     def _menudata(
         self,
         view_url: str,
@@ -454,23 +491,16 @@ class ZTEH388XAPI:
         root_element: str,
         retry: bool = True,
     ) -> List[Dict[str, str]]:
-        """Generic menuView + menuData fetcher with auto re-login on timeout."""
-        try:
-            self.session.get(
-                f"{self.base_url}{view_url}", headers=self.NO_CACHE, timeout=8
+        """Fetch menuView + menuData, retrying one expired session."""
+        self._get_response(f"{self.base_url}{view_url}")
+        resp = self._get_response(f"{self.base_url}{data_url}")
+        if self._is_session_expired(resp.text):
+            if retry and self.login():
+                return self._menudata(view_url, data_url, root_element, retry=False)
+            raise SessionExpiredError(
+                f"session expired while reading {data_url}; automatic re-login failed"
             )
-            resp = self.session.get(
-                f"{self.base_url}{data_url}", headers=self.NO_CACHE, timeout=8
-            )
-
-            if self._is_session_expired(resp.text):
-                if retry and self.login():
-                    return self._menudata(view_url, data_url, root_element, retry=False)
-                return []
-
-            return self._parse_instances(resp.text, root_element)
-        except requests.RequestException:
-            return []
+        return self._parse_instances(resp.text, root_element)
 
     def _refresh_session_token(self, body: str) -> None:
         """Update ``self.session_token`` from a POST response, if present.
@@ -524,48 +554,53 @@ class ZTEH388XAPI:
         fields: Dict[str, str],
         retry: bool = True,
     ) -> Tuple[bool, str]:
-        """POST a write action against a menuData endpoint.
-
-        Mirrors the WebUI's ``dataPost`` flow: arm the parent view,
-        refresh the ``_sessionTOKEN`` from ``login_entry`` (the token
-        rotates server-side at every request, so a value loaded from
-        the session cache is almost always stale → ``IF_ERRORID=-1452
-        "page expired"``), then POST ``IF_ACTION=<action>`` + the
-        caller's ``fields`` + the rotating token. On ``SessionTimeout``
-        re-logs in and replays the call once. Returns ``(ok, raw_body)``
-        where ``ok`` means ``IF_ERRORSTR=SUCC``.
-        """
+        """POST a write action while preserving the public ``(ok, body)`` contract."""
         try:
-            self.session.get(
+            view = self.session.get(
                 f"{self.base_url}{view_url}", headers=self.NO_CACHE, timeout=8
             )
-            self._fetch_fresh_session_token()
-            payload = {
-                "IF_ACTION": action,
-                **{k: ("" if v is None else str(v)) for k, v in fields.items()},
-                "_sessionTOKEN": self.session_token or "",
-            }
+        except requests.RequestException as exc:
+            return False, f"transport error arming view: {exc}"
+        if not 200 <= view.status_code < 400:
+            return False, f"protocol error arming view: HTTP {view.status_code}"
+
+        if not self._fetch_fresh_session_token():
+            if retry and self.login():
+                return self._post_action(view_url, data_url, action, fields, retry=False)
+            return False, "could not refresh session token; write was not attempted"
+
+        payload = {
+            "IF_ACTION": action,
+            **{k: ("" if v is None else str(v)) for k, v in fields.items()},
+            "_sessionTOKEN": self.session_token or "",
+        }
+        try:
             resp = self.session.post(
                 f"{self.base_url}{data_url}",
                 data=payload,
                 headers=self.NO_CACHE,
                 timeout=10,
             )
-            body = resp.text
-            if self._is_session_expired(body):
-                if retry and self.login():
-                    return self._post_action(
-                        view_url, data_url, action, fields, retry=False
-                    )
-                return False, body
-            self._refresh_session_token(body)
-            ok = (
-                resp.status_code == 200
-                and "<IF_ERRORSTR>SUCC</IF_ERRORSTR>" in body
-            )
-            return ok, body
-        except requests.RequestException as e:
-            return False, f"requests error: {e}"
+        except requests.RequestException as exc:
+            return False, f"transport error posting action: {exc}"
+
+        body = resp.text
+        if self._is_session_expired(body):
+            if retry and self.login():
+                return self._post_action(view_url, data_url, action, fields, retry=False)
+            return False, body
+        if not 200 <= resp.status_code < 400:
+            return False, f"HTTP {resp.status_code}: {body}"
+
+        self._refresh_session_token(body)
+        try:
+            root = ET.fromstring(body)
+        except ET.ParseError as exc:
+            return False, f"protocol error: invalid XML response: {exc}"
+        error_str = root.findtext(".//IF_ERRORSTR")
+        if error_str is None:
+            return False, "protocol error: response does not contain IF_ERRORSTR"
+        return error_str.strip() == "SUCC", body
 
     def _menudata_multi(
         self,
@@ -574,29 +609,19 @@ class ZTEH388XAPI:
         root_elements: List[str],
         retry: bool = True,
     ) -> Dict[str, List[Dict[str, str]]]:
-        """Like ``_menudata`` but parses multiple root elements from a single
-        response. Returns ``{root: [instances]}`` so a single HTTP roundtrip
-        can populate sibling collections (e.g. voipstatus exposes both
-        OBJ_VOIPVPLINE_ID and OBJ_VOIPSIPLINE_ID in the same payload)."""
-        try:
-            self.session.get(
-                f"{self.base_url}{view_url}", headers=self.NO_CACHE, timeout=8
+        """Like ``_menudata`` but parse multiple roots from one response."""
+        self._get_response(f"{self.base_url}{view_url}")
+        resp = self._get_response(f"{self.base_url}{data_url}")
+        if self._is_session_expired(resp.text):
+            if retry and self.login():
+                return self._menudata_multi(view_url, data_url, root_elements, retry=False)
+            raise SessionExpiredError(
+                f"session expired while reading {data_url}; automatic re-login failed"
             )
-            resp = self.session.get(
-                f"{self.base_url}{data_url}", headers=self.NO_CACHE, timeout=8
-            )
-
-            if self._is_session_expired(resp.text):
-                if retry and self.login():
-                    return self._menudata_multi(view_url, data_url, root_elements, retry=False)
-                return {root: [] for root in root_elements}
-
-            return {
-                root: self._parse_instances(resp.text, root)
-                for root in root_elements
-            }
-        except requests.RequestException:
-            return {root: [] for root in root_elements}
+        return {
+            root: self._parse_instances(resp.text, root)
+            for root in root_elements
+        }
 
     # ---------------------------------------------------------------- DSL stats
 
@@ -638,39 +663,19 @@ class ZTEH388XAPI:
         )
 
     def get_wifi_clients(self, retry: bool = True) -> List[Dict[str, str]]:
-        """Return Wi-Fi clients after reproducing the WebUI arming sequence.
-
-        The TIM firmware rejects ``accessdev_ssiddev_lua.lua`` on some session
-        states unless ``localNetStatus`` and ``wlan_status_lua.lua`` are fetched
-        immediately beforehand.
-        """
-        try:
-            self.session.get(
-                f"{self.base_url}{self.LOCALNET_VIEW_URL}",
-                headers=self.NO_CACHE,
-                timeout=8,
-            )
-            wlan = self.session.get(
-                f"{self.base_url}{self.WLAN_APS_URL}",
-                headers=self.NO_CACHE,
-                timeout=8,
-            )
-            if self._is_session_expired(wlan.text):
-                if retry and self.login():
-                    return self.get_wifi_clients(retry=False)
-                return []
-            clients = self.session.get(
-                f"{self.base_url}{self.WIFI_CLIENTS_URL}",
-                headers=self.NO_CACHE,
-                timeout=8,
-            )
-            if self._is_session_expired(clients.text):
-                if retry and self.login():
-                    return self.get_wifi_clients(retry=False)
-                return []
-            return self._parse_instances(clients.text, "OBJ_ACCESSDEV_ID")
-        except requests.RequestException:
-            return []
+        """Return Wi-Fi clients after reproducing the WebUI arming sequence."""
+        self._get_response(f"{self.base_url}{self.LOCALNET_VIEW_URL}")
+        wlan = self._get_response(f"{self.base_url}{self.WLAN_APS_URL}")
+        if self._is_session_expired(wlan.text):
+            if retry and self.login():
+                return self.get_wifi_clients(retry=False)
+            raise SessionExpiredError("session expired while arming Wi-Fi client view")
+        clients = self._get_response(f"{self.base_url}{self.WIFI_CLIENTS_URL}")
+        if self._is_session_expired(clients.text):
+            if retry and self.login():
+                return self.get_wifi_clients(retry=False)
+            raise SessionExpiredError("session expired while reading Wi-Fi clients")
+        return self._parse_instances(clients.text, "OBJ_ACCESSDEV_ID")
 
     # ---------------------------------------------------------------- Wi-Fi
 
@@ -1252,42 +1257,24 @@ class ZTEH388XAPI:
         data_url: str,
         retry: bool = True,
     ) -> str:
-        """Like ``_menudata`` but returns the raw response body. Used for
-        the few endpoints that emit JSON (e.g. ``topo_lua.lua``) instead
-        of the standard ZTE XML ``Instance/ParaName/ParaValue`` shape."""
-        try:
-            self.session.get(
-                f"{self.base_url}{view_url}", headers=self.NO_CACHE, timeout=8
+        """Like ``_menudata`` but return the validated raw response body."""
+        self._get_response(f"{self.base_url}{view_url}")
+        resp = self._get_response(f"{self.base_url}{data_url}")
+        if self._is_session_expired(resp.text):
+            if retry and self.login():
+                return self._menudata_raw(view_url, data_url, retry=False)
+            raise SessionExpiredError(
+                f"session expired while reading {data_url}; automatic re-login failed"
             )
-            resp = self.session.get(
-                f"{self.base_url}{data_url}", headers=self.NO_CACHE, timeout=8
-            )
-            if self._is_session_expired(resp.text):
-                if retry and self.login():
-                    return self._menudata_raw(view_url, data_url, retry=False)
-                return ""
-            return resp.text
-        except requests.RequestException:
-            return ""
+        return resp.text
 
     def get_topology(self, retry: bool = True) -> Dict[str, Any]:
-        """Return the EasyMesh topology view as a plain dict.
-
-        The endpoint replies with JSON (rare for AGZHM): one
-        ``controllerData`` describing the controller (the modem itself)
-        plus ``agentlay1`` / ``agentlay2`` for the two extender layers,
-        each carrying ``MGET_INST_NUM`` and an optional ``Instance``
-        list when satellites are present.
-        """
-        import json as _json
-
+        """Return the EasyMesh topology, raising ``ParseError`` on invalid JSON."""
         body = self._menudata_raw(self.TOPOLOGY_VIEW_URL, self.TOPOLOGY_URL, retry)
-        if not body:
-            return {}
         try:
             return _json.loads(body)
-        except _json.JSONDecodeError:
-            return {}
+        except _json.JSONDecodeError as exc:
+            raise ParseError(f"invalid topology JSON: {exc}") from exc
 
     def get_band_steering(self, retry: bool = True) -> Dict[str, List[Dict[str, str]]]:
         """Return EasyMesh + band steering master switches (single page).
@@ -1553,23 +1540,15 @@ class ZTEH388XAPI:
     def _hiddendata(
         self, data_url: str, root_element: str, retry: bool = True,
     ) -> List[Dict[str, str]]:
-        """Fetch a ``_type=hiddenData`` endpoint (no view-arming).
-
-        These endpoints sit outside the menuView/menuData dance and
-        respond to a plain authenticated GET. Session timeout
-        handling is the same — re-login once then retry.
-        """
-        try:
-            resp = self.session.get(
-                f"{self.base_url}{data_url}", headers=self.NO_CACHE, timeout=8
+        """Fetch a hiddenData endpoint without collapsing failures to an empty list."""
+        resp = self._get_response(f"{self.base_url}{data_url}")
+        if self._is_session_expired(resp.text):
+            if retry and self.login():
+                return self._hiddendata(data_url, root_element, retry=False)
+            raise SessionExpiredError(
+                f"session expired while reading {data_url}; automatic re-login failed"
             )
-            if self._is_session_expired(resp.text):
-                if retry and self.login():
-                    return self._hiddendata(data_url, root_element, retry=False)
-                return []
-            return self._parse_instances(resp.text, root_element)
-        except requests.RequestException:
-            return []
+        return self._parse_instances(resp.text, root_element)
 
     def get_sntp(self, retry: bool = True) -> Dict[str, str]:
         """Return SNTP/time config (OBJ_SNTP_ID, single row).

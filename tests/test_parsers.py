@@ -9,6 +9,7 @@ parser to lock down the behaviour we depend on across all the
 import pytest
 
 from h388x_cli.api import ZTEH388XAPI
+from h388x_cli.errors import ParseError
 
 
 # --- _strip_prefix ----------------------------------------------------------
@@ -122,9 +123,10 @@ def test_parse_unknown_root_returns_empty_list():
     assert ZTEH388XAPI._parse_instances(SIMPLE_XML, "OBJ_DOES_NOT_EXIST") == []
 
 
-def test_parse_malformed_xml_returns_empty_list():
-    """Bad XML must not raise; the API layer logs nothing and returns []."""
-    assert ZTEH388XAPI._parse_instances("not xml at all <<", "OBJ_X") == []
+def test_parse_malformed_xml_raises_parse_error():
+    """Bad XML is a protocol failure, not a legitimate empty collection."""
+    with pytest.raises(ParseError):
+        ZTEH388XAPI._parse_instances("not xml at all <<", "OBJ_X")
 
 
 def test_parse_multi_root_payload():

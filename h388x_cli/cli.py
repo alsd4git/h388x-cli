@@ -22,6 +22,7 @@ from .devices import (
     reservations_export as _reservations_export,
 )
 from .discovery import Spider
+from .errors import H388XError
 from .discovery import compare_discovery_reports
 from .coverage import build_capabilities, load_discovery_report
 from .private_files import write_private_bytes as _write_private_bytes
@@ -4365,5 +4366,17 @@ def discover(
         api.close()
 
 
+def run_cli() -> None:
+    """Console entry point with stable handling for operational API errors."""
+    try:
+        app()
+    except H388XError as exc:
+        if state.json:
+            _emit_json({"ok": False, "error": {"type": exc.code, "message": str(exc)}})
+        else:
+            console.print(f"[red]{exc.code}:[/red] {exc}")
+        raise SystemExit(exc.exit_code) from exc
+
+
 if __name__ == "__main__":
-    app()
+    run_cli()
