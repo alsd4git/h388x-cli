@@ -63,7 +63,6 @@ fail_under = 55
 [dependency-groups]
 dev = [
     "pytest>=9.0.3",
-    "pytest-cov>=7.0.0",
     "responses>=0.26.1",
     "ruff>=0.15.21",
 ]
