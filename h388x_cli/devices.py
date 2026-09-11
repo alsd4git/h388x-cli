@@ -1,13 +1,37 @@
 """Pure helpers for the MAC-keyed device naming workflow."""
 
+from __future__ import annotations
+
+import re
 from typing import Any, Dict, List, Optional
 
 from .models import Client, DhcpBinding
 
 
+_MAC_HEX_RE = re.compile(r"^[0-9a-fA-F]{12}$")
+
+
 def norm_mac(mac: Optional[str]) -> str:
-    """Normalize a MAC for use as a merge key (lower-case, no spaces)."""
-    return (mac or "").strip().lower()
+    """Normalize a MAC for comparison and imports.
+
+    Common colon-, dash- and dot-separated representations are accepted and
+    normalized to lower-case colon notation. Invalid/non-standard values are
+    still returned as a trimmed lower-case string so read-only modem data is
+    never silently discarded; write/import validation can reject them.
+    """
+    raw = (mac or "").strip()
+    if not raw:
+        return ""
+    compact = re.sub(r"[:-]", "", raw).replace(".", "")
+    if _MAC_HEX_RE.fullmatch(compact):
+        return ":".join(compact[i:i + 2] for i in range(0, 12, 2)).lower()
+    return raw.lower()
+
+
+def is_valid_mac(mac: Optional[str]) -> bool:
+    """Return whether *mac* is a conventional 48-bit MAC address."""
+    normalized = norm_mac(mac)
+    return bool(re.fullmatch(r"(?:[0-9a-f]{2}:){5}[0-9a-f]{2}", normalized))
 
 
 def _empty_device(mac: Optional[str]) -> Dict[str, Any]:
@@ -58,7 +82,6 @@ def merge_devices(
         row["name"] = binding.name or row["name"]
         row["reserved_ip"] = binding.ip_address or row["reserved_ip"]
         row["reservation_id"] = binding.id or row["reservation_id"]
-        # If the device isn't currently connected we still have an IP to show.
         if not row["ipv4"]:
             row["ipv4"] = binding.ip_address
 
@@ -68,11 +91,15 @@ def merge_devices(
 def reservations_export(bindings: List[DhcpBinding]) -> List[Dict[str, str]]:
     """Build the portable ``[{mac, ip, name}]`` export from reservations.
 
-    Only reservations with a MAC are exported (MAC is the route-A key).
-    Sorted by IP for stable, diff-friendly output.
+    Only reservations with a MAC are exported. Sorted by IP for stable,
+    diff-friendly output.
     """
     out = [
-        {"mac": binding.mac, "ip": binding.ip_address or "", "name": binding.name or ""}
+        {
+            "mac": norm_mac(binding.mac),
+            "ip": binding.ip_address or "",
+            "name": binding.name or "",
+        }
         for binding in bindings
         if binding.mac
     ]
@@ -83,29 +110,37 @@ def plan_import(
     entries: List[Dict[str, Any]],
     bindings: List[DhcpBinding],
 ) -> List[Dict[str, Any]]:
-    """Compute the idempotent import plan keyed by MAC.
+    """Compute an idempotent, validation-first import plan keyed by MAC.
 
-    For each ``{mac, ip, name}`` entry, decide the action against the
-    current reservations:
-    - ``add``       — no reservation exists for that MAC,
-    - ``edit``      — a reservation exists but name and/or IP differ,
-    - ``unchanged`` — reservation already matches (idempotent no-op),
-    - ``error``     — malformed entry (missing MAC, or missing IP on add).
-
-    Returns one plan dict per entry; never deletes (pruning is out of
-    scope, use ``devices clear`` for removals).
+    For each ``{mac, ip, name}`` entry, decide the action against current
+    reservations. Duplicate MACs and malformed/non-object entries are emitted
+    as ``error`` items so callers can refuse the whole plan before writing.
     """
     by_mac = {norm_mac(binding.mac): binding for binding in bindings if binding.mac}
     plan: List[Dict[str, Any]] = []
+    seen: set[str] = set()
 
-    for entry in entries:
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            plan.append({
+                "action": "error",
+                "error": f"entry {index} must be an object",
+                "mac": "",
+                "ip": "",
+                "name": "",
+                "id": None,
+                "old_name": None,
+                "old_ip": None,
+            })
+            continue
+
         mac = (entry.get("mac") or "").strip()
         ip = (entry.get("ip") or "").strip()
         name = (entry.get("name") or "").strip()
         key = norm_mac(mac)
 
         item: Dict[str, Any] = {
-            "mac": mac,
+            "mac": key or mac,
             "ip": ip,
             "name": name,
             "id": None,
@@ -118,6 +153,17 @@ def plan_import(
             item["error"] = "missing mac"
             plan.append(item)
             continue
+        if not is_valid_mac(key):
+            item["action"] = "error"
+            item["error"] = f"invalid mac: {mac!r}"
+            plan.append(item)
+            continue
+        if key in seen:
+            item["action"] = "error"
+            item["error"] = f"duplicate mac in import: {key}"
+            plan.append(item)
+            continue
+        seen.add(key)
 
         existing = by_mac.get(key)
         if existing is None:
@@ -132,7 +178,6 @@ def plan_import(
         item["id"] = existing.id
         item["old_name"] = existing.name or ""
         item["old_ip"] = existing.ip_address or ""
-        # An empty IP in the import keeps the current reservation IP.
         target_ip = ip or (existing.ip_address or "")
         item["ip"] = target_ip
         if (existing.name or "") == name and (existing.ip_address or "") == target_ip:
