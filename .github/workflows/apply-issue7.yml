@@ -22,9 +22,12 @@ jobs:
           enable-cache: true
       - name: Apply polish
         run: python .github/scripts/apply_issue7.py
-      - name: Validate
+      - name: Normalize new test formatting
         run: |
           uv sync --locked --dev
+          uv run ruff format tests/test_coverage.py
+      - name: Validate
+        run: |
           uv run ruff check h388x_cli tests
           uv run ruff format --check h388x_cli tests
           uv run pytest
