@@ -38,7 +38,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add h388x_cli/coverage.py tests/test_coverage.py README.md .gitignore
+          git add h388x_cli/coverage.py tests/test_coverage.py tests/test_cli_smoke.py README.md .gitignore
           git diff --cached --check
           git commit -m "fix: make capability detection explicit (#7)"
           git push origin HEAD:improve/h388x-hardening-release
