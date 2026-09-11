@@ -312,3 +312,15 @@ def test_session_retry_respects_spider_request_budget():
     assert api.session.get.call_count == 1
     assert "request budget" in ep.error
     assert spider._requests_made == 1
+
+
+def test_discovered_query_values_decode_before_canonical_reencoding():
+    found = Spider._extract_endpoints(
+        '"/?_type=menuData&_tag=example.lua&name=a%20b&token=x%2By"'
+    )
+
+    assert found == [("menuData", "example.lua", {"name": "a b", "token": "x+y"})]
+    tp, tag, extras = found[0]
+    assert Endpoint(type=tp, tag=tag, extras=extras).url() == (
+        "/?_type=menuData&_tag=example.lua&name=a%20b&token=x%2By"
+    )

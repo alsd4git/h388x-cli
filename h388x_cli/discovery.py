@@ -27,7 +27,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter, deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
-from urllib.parse import quote, urlencode, urljoin, urlsplit
+from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlsplit
 
 import requests
 
@@ -543,11 +543,9 @@ class Spider:
             tag = m.group("tag")
             extras: Dict[str, str] = {}
             extra_str = m.group("extra") or ""
-            for chunk in extra_str.split("&"):
-                if "=" in chunk:
-                    k, _, v = chunk.partition("=")
-                    if k:
-                        extras[k] = v
+            for k, v in parse_qsl(extra_str.lstrip("&"), keep_blank_values=True):
+                if k:
+                    extras[k] = v
             out.append((tp, tag, extras))
         return out
 

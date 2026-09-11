@@ -1461,7 +1461,7 @@ def dhcp_reserve_add(
         new_rows = [
             DhcpBinding.model_validate(r)
             for r in rows
-            if (r.get("MACAddr") or "").lower() == mac.lower()
+            if _norm_mac(r.get("MACAddr")) == _norm_mac(mac)
         ]
         if state.json:
             _emit_json(

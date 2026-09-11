@@ -513,6 +513,15 @@ def devices_edit(
         table.add_column("Name", style="cyan")
         table.add_column("IP", style="green")
         table.add_column("MAC")
+        for kind, r, new in actions:
+            label = (new if new is not None else r["name"]) or "-"
+            table.add_row(kind, label, r["ipv4"] or "-", r["mac"] or "-")
+        console.print()
+        console.print(table)
+        if not typer.confirm("Apply these changes?"):
+            console.print("[yellow]Aborted.[/yellow]")
+            return
+
         applied = 0
         for index, (kind, r, new) in enumerate(actions):
             if kind == "edit":

@@ -100,3 +100,39 @@ def test_devices_import_dry_run_with_valid_plan_is_success(monkeypatch, tmp_path
     assert payload["ok"] is True
     assert payload["dry_run"] is True
     assert api.calls == []
+
+
+class _FakeEditApi(_FakeApi):
+    def get_lan_clients(self):
+        return []
+
+    def get_wifi_clients(self):
+        return []
+
+    def get_dhcp_bindings(self):
+        return [
+            {
+                "_OBJ_InstID": "DEV.V4DP.Sr.Pl1.Bd1",
+                "Name": "Old name",
+                "IPAddr": "192.168.1.50",
+                "MACAddr": "aa:bb:cc:dd:ee:ff",
+            }
+        ]
+
+    def edit_dhcp_reservation(self, reservation_id, *, name):
+        self.calls.append(("edit", reservation_id, name))
+        return True, "ok"
+
+
+def test_devices_edit_shows_pending_changes_and_can_abort_before_write(monkeypatch):
+    api = _FakeEditApi()
+    monkeypatch.setattr(cli_devices, "get_api", lambda *_args, **_kwargs: api)
+
+    result = runner.invoke(cli.app, ["devices", "edit"], input="New name\nn\n")
+
+    assert result.exit_code == 0, result.stdout
+    assert "Pending changes" in result.stdout
+    assert "Apply these changes?" in result.stdout
+    assert "Aborted." in result.stdout
+    assert api.calls == []
+    assert api.closed is True
