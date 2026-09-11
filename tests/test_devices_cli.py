@@ -2,7 +2,7 @@ import json
 
 from typer.testing import CliRunner
 
-from h388x_cli import cli
+from h388x_cli import cli, cli_devices
 
 
 runner = CliRunner()
@@ -36,7 +36,7 @@ def _write_import(tmp_path, entries):
 
 def test_devices_import_json_preflight_failure_does_not_write(monkeypatch, tmp_path):
     api = _FakeApi()
-    monkeypatch.setattr(cli, "get_api", lambda *_args, **_kwargs: api)
+    monkeypatch.setattr(cli_devices, "get_api", lambda *_args, **_kwargs: api)
     path = _write_import(
         tmp_path,
         [
@@ -55,9 +55,11 @@ def test_devices_import_json_preflight_failure_does_not_write(monkeypatch, tmp_p
     assert api.closed is True
 
 
-def test_devices_import_json_partial_write_failure_is_not_success(monkeypatch, tmp_path):
+def test_devices_import_json_partial_write_failure_is_not_success(
+    monkeypatch, tmp_path
+):
     api = _FakeApi([(True, "ok"), (False, "rejected")])
-    monkeypatch.setattr(cli, "get_api", lambda *_args, **_kwargs: api)
+    monkeypatch.setattr(cli_devices, "get_api", lambda *_args, **_kwargs: api)
     path = _write_import(
         tmp_path,
         [
@@ -83,7 +85,7 @@ def test_devices_import_json_partial_write_failure_is_not_success(monkeypatch, t
 
 def test_devices_import_dry_run_with_valid_plan_is_success(monkeypatch, tmp_path):
     api = _FakeApi()
-    monkeypatch.setattr(cli, "get_api", lambda *_args, **_kwargs: api)
+    monkeypatch.setattr(cli_devices, "get_api", lambda *_args, **_kwargs: api)
     path = _write_import(
         tmp_path,
         [{"mac": "aa:bb:cc:00:11:22", "ip": "192.168.1.50", "name": "Laptop"}],

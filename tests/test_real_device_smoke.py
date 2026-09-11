@@ -34,7 +34,9 @@ def test_real_modem_device_info_smoke():
         cache_enabled=False,
     )
     try:
-        assert api.login(), "login failed; check host, credentials, and active WebUI sessions"
+        assert api.login(), (
+            "login failed; check host, credentials, and active WebUI sessions"
+        )
         assert api.get_device_info(), "device information endpoint returned no data"
     finally:
         # Free the modem's single admin slot even when the read assertion fails.

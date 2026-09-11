@@ -70,7 +70,9 @@ def test_constructor_rejects_unsafe_or_ambiguous_base_urls(host):
 
 @responses.activate
 def test_post_action_does_not_post_without_fresh_csrf_token(tmp_path):
-    api = ZTEH388XAPI(HOST, "admin", "password", cache_enabled=False, cache_dir=tmp_path)
+    api = ZTEH388XAPI(
+        HOST, "admin", "password", cache_enabled=False, cache_dir=tmp_path
+    )
     api.session_token = "STALE"
     responses.add(responses.GET, f"{HOST}{api.WEB_TIMEOUT_VIEW_URL}", body="<root/>")
     responses.add(
@@ -89,7 +91,9 @@ def test_post_action_does_not_post_without_fresh_csrf_token(tmp_path):
 
 @responses.activate
 def test_post_action_parses_success_structurally(tmp_path):
-    api = ZTEH388XAPI(HOST, "admin", "password", cache_enabled=False, cache_dir=tmp_path)
+    api = ZTEH388XAPI(
+        HOST, "admin", "password", cache_enabled=False, cache_dir=tmp_path
+    )
     api.session_token = "OLD"
     responses.add(responses.GET, f"{HOST}{api.WEB_TIMEOUT_VIEW_URL}", body="<root/>")
     responses.add(

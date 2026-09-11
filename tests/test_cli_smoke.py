@@ -89,15 +89,19 @@ def test_capabilities_json_is_versioned_and_redacts_serial(fake_api, tmp_path):
     }
     report = tmp_path / "endpoints.json"
     report.write_text(
-        json.dumps({
-            "device": {"serial": "SECRET-SERIAL"},
-            "stats": {"endpoint_count": 1, "endpoints_with_data": 1},
-            "endpoints": [{
-                "type": "menuData",
-                "tag": "devmgr_statusmgr_lua.lua",
-                "extras": {},
-            }],
-        }),
+        json.dumps(
+            {
+                "device": {"serial": "SECRET-SERIAL"},
+                "stats": {"endpoint_count": 1, "endpoints_with_data": 1},
+                "endpoints": [
+                    {
+                        "type": "menuData",
+                        "tag": "devmgr_statusmgr_lua.lua",
+                        "extras": {},
+                    }
+                ],
+            }
+        ),
         encoding="utf-8",
     )
 

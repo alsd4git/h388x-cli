@@ -22,7 +22,9 @@ class DSLStats(BaseModel):
     upstream_max_rate: Optional[int] = Field(None, alias="Upstream_max_rate")
 
     # Deci-units: divide by 10 for human-readable dB / dBm.
-    downstream_noise_margin: Optional[int] = Field(None, alias="Downstream_noise_margin")
+    downstream_noise_margin: Optional[int] = Field(
+        None, alias="Downstream_noise_margin"
+    )
     upstream_noise_margin: Optional[int] = Field(None, alias="Upstream_noise_margin")
     downstream_attenuation: Optional[int] = Field(None, alias="Downstream_attenuation")
     upstream_attenuation: Optional[int] = Field(None, alias="Upstream_attenuation")
@@ -645,6 +647,7 @@ class WifiAP(BaseModel):
 
 # -------- Group F: system / admin -------------------------------------------
 
+
 class AdminUser(BaseModel):
     """A web admin account (``OBJ_USERINFO_ID/Instance``).
 
@@ -706,6 +709,7 @@ class PublicLan(BaseModel):
 
 # -------- Group G: DSL physical line ---------------------------------------
 
+
 class DslInterface(BaseModel):
     """Full DSL PHY view (``OBJ_DSLINTERFACE_ID/Instance``).
 
@@ -742,14 +746,22 @@ class DslInterface(BaseModel):
     upstream_interleave_depth: Optional[int] = Field(None, alias="UpInterleaveDepth")
     upstream_crc_errors: Optional[int] = Field(None, alias="UpCrc_errors")
 
-    downstream_current_rate: Optional[int] = Field(None, alias="Downstream_current_rate")
+    downstream_current_rate: Optional[int] = Field(
+        None, alias="Downstream_current_rate"
+    )
     downstream_max_rate: Optional[int] = Field(None, alias="Downstream_max_rate")
-    downstream_noise_margin: Optional[int] = Field(None, alias="Downstream_noise_margin")
+    downstream_noise_margin: Optional[int] = Field(
+        None, alias="Downstream_noise_margin"
+    )
     downstream_power: Optional[int] = Field(None, alias="Downstream_power")
     downstream_attenuation: Optional[int] = Field(None, alias="Downstream_attenuation")
     downstream_inp: Optional[int] = Field(None, alias="DownstreamInp")
-    downstream_interleave_delay: Optional[int] = Field(None, alias="DownInterleaveDelay")
-    downstream_interleave_depth: Optional[int] = Field(None, alias="DownInterleavedepth")
+    downstream_interleave_delay: Optional[int] = Field(
+        None, alias="DownInterleaveDelay"
+    )
+    downstream_interleave_depth: Optional[int] = Field(
+        None, alias="DownInterleavedepth"
+    )
     downstream_crc_errors: Optional[int] = Field(None, alias="DownCrc_errors")
 
     link_retrain: Optional[int] = Field(None, alias="Link_retrain")
@@ -760,6 +772,7 @@ class DslInterface(BaseModel):
 
 
 # -------- Group L: Wi-Fi SSID full config ----------------------------------
+
 
 class WifiSsidConfig(BaseModel):
     """Full SSID config row (``OBJ_WLANAP_ID/Instance``, ``wlan_sssidconf``).
@@ -789,6 +802,7 @@ class WifiSsidConfig(BaseModel):
 
 
 # -------- SNTP / time config (hidden endpoint) -----------------------------
+
 
 class SntpConfig(BaseModel):
     """SNTP / time config row (``OBJ_SNTP_ID/Instance``, ``sntp_data``).

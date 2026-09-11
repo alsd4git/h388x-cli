@@ -225,7 +225,9 @@ def plan_import(
     return plan
 
 
-def apply_import_plan(api: Any, plan: List[Dict[str, Any]]) -> tuple[bool, Dict[str, Any]]:
+def apply_import_plan(
+    api: Any, plan: List[Dict[str, Any]]
+) -> tuple[bool, Dict[str, Any]]:
     """Apply a validated import plan, stopping safely on the first write failure.
 
     If preflight contains any ``error`` item, no modem write is attempted.

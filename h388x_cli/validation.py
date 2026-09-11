@@ -246,7 +246,7 @@ def validation_error_message(exc: Exception) -> str:
             location = ".".join(str(part) for part in error.get("loc", ())) or "input"
             message = error.get("msg", "invalid value")
             if message.startswith("Value error, "):
-                message = message[len("Value error, "):]
+                message = message[len("Value error, ") :]
             parts.append(f"{location}: {message}")
         if parts:
             return "; ".join(parts)

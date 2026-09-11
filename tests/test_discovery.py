@@ -61,7 +61,9 @@ def test_discover_writes_private_file_and_refuses_overwrite(monkeypatch, tmp_pat
     api.base_url = "http://modem.test"
     api.get_device_info.return_value = {}
     monkeypatch.setattr(cli, "get_api", lambda *args, **kwargs: api)
-    monkeypatch.setattr(cli, "Spider", lambda *args, **kwargs: MagicMock(run=lambda: result))
+    monkeypatch.setattr(
+        cli, "Spider", lambda *args, **kwargs: MagicMock(run=lambda: result)
+    )
     output = tmp_path / "report.json"
     runner = CliRunner()
 
@@ -147,21 +149,27 @@ def test_compare_discovery_reports_is_deterministic_and_ignores_samples():
 def test_discover_previous_emits_comparison(monkeypatch, tmp_path):
     previous = tmp_path / "previous.json"
     previous.write_text(
-        json.dumps({
-            "endpoints": [{
-                "type": "menuData",
-                "tag": "old.lua",
-                "extras": {},
-            }]
-        }),
+        json.dumps(
+            {
+                "endpoints": [
+                    {
+                        "type": "menuData",
+                        "tag": "old.lua",
+                        "extras": {},
+                    }
+                ]
+            }
+        ),
         encoding="utf-8",
     )
     current = {
-        "endpoints": [{
-            "type": "menuData",
-            "tag": "new.lua",
-            "extras": {},
-        }],
+        "endpoints": [
+            {
+                "type": "menuData",
+                "tag": "new.lua",
+                "extras": {},
+            }
+        ],
         "stats": {
             "requests_made": 0,
             "errors": 0,
@@ -178,7 +186,9 @@ def test_discover_previous_emits_comparison(monkeypatch, tmp_path):
     api.base_url = "http://modem.test"
     api.get_device_info.return_value = {}
     monkeypatch.setattr(cli, "get_api", lambda *args, **kwargs: api)
-    monkeypatch.setattr(cli, "Spider", lambda *args, **kwargs: MagicMock(run=lambda: current))
+    monkeypatch.setattr(
+        cli, "Spider", lambda *args, **kwargs: MagicMock(run=lambda: current)
+    )
     output = tmp_path / "current.json"
 
     result = CliRunner().invoke(
@@ -207,10 +217,22 @@ def test_endpoint_url_encodes_extra_query_values_without_mangling_tag():
 
 
 def test_asset_paths_resolve_relative_to_referring_asset():
-    assert Spider._normalize_path("../common/app.js", "/js/pages/status.html") == "/js/common/app.js"
-    assert Spider._normalize_path("./widget.js?cache=1#x", "/js/pages/status.html") == "/js/pages/widget.js"
-    assert Spider._normalize_path("/root/app.js", "/js/pages/status.html") == "/root/app.js"
-    assert Spider._normalize_path("https://evil.example/x.js", "/js/pages/status.html") == ""
+    assert (
+        Spider._normalize_path("../common/app.js", "/js/pages/status.html")
+        == "/js/common/app.js"
+    )
+    assert (
+        Spider._normalize_path("./widget.js?cache=1#x", "/js/pages/status.html")
+        == "/js/pages/widget.js"
+    )
+    assert (
+        Spider._normalize_path("/root/app.js", "/js/pages/status.html")
+        == "/root/app.js"
+    )
+    assert (
+        Spider._normalize_path("https://evil.example/x.js", "/js/pages/status.html")
+        == ""
+    )
     assert Spider._normalize_path("//evil.example/x.js", "/js/pages/status.html") == ""
 
 

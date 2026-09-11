@@ -18,12 +18,16 @@ HOST = "http://modem.test"
 
 def _new_api(tmp_path, host=HOST, user="admin", enabled=True):
     return ZTEH388XAPI(
-        host, user, "password",
-        cache_enabled=enabled, cache_dir=tmp_path,
+        host,
+        user,
+        "password",
+        cache_enabled=enabled,
+        cache_dir=tmp_path,
     )
 
 
 # --- path layout -----------------------------------------------------------
+
 
 def test_default_cache_dir_uses_xdg_when_set(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
@@ -40,6 +44,7 @@ def test_cache_path_is_per_host_and_user(tmp_path):
 
 
 # --- save / load roundtrip -------------------------------------------------
+
 
 def test_save_then_load_roundtrip(tmp_path):
     a = _new_api(tmp_path)
@@ -107,6 +112,7 @@ def test_clear_cache_removes_file(tmp_path):
 
 # --- file permissions ------------------------------------------------------
 
+
 @pytest.mark.skipif(
     not hasattr(__import__("os"), "stat"),
     reason="os.stat() not available",
@@ -124,6 +130,7 @@ def test_save_writes_0600_permissions(tmp_path):
 
 
 # --- close vs logout semantics --------------------------------------------
+
 
 def test_close_preserves_cache(tmp_path):
     a = _new_api(tmp_path)
@@ -150,6 +157,7 @@ def test_logout_without_token_still_clears_cache(tmp_path):
 
 
 # --- cache payload shape ---------------------------------------------------
+
 
 def test_cache_payload_contains_host_user_and_token(tmp_path):
     a = _new_api(tmp_path, host="http://m.example.com", user="admin")

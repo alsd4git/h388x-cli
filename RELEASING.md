@@ -21,6 +21,7 @@ branch or an unmerged pull request.
 
    ```bash
    uv run ruff check h388x_cli tests
+   uv run ruff format --check h388x_cli tests
    uv run pytest
    uv build
    ```
@@ -34,10 +35,6 @@ branch or an unmerged pull request.
    ```
 
 6. Commit the version/changelog/lockfile changes and merge them to `main` before tagging.
-
-Repository-wide `ruff format --check` is enabled as a CI/release gate once the baseline
-formatting migration tracked in #4 is complete; until then `ruff check` is the formatting-neutral
-quality gate.
 
 ## Create the release
 

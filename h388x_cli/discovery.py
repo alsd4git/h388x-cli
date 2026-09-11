@@ -58,35 +58,82 @@ _RE_MENU_TREE = re.compile(
 
 # Conservative deny-list: if a ``_tag`` matches this, we record the URL
 # but do NOT GET it. Some routers run actions on GET as well as POST.
-_MUTATING_TOKENS = frozenset({
-    "add", "set", "del", "delete", "remove", "update", "edit",
-    "save", "submit", "apply", "action",
-    "restart", "reboot", "reset", "logout", "logoff",
-    "upgrade", "upload", "download", "export", "import",
-    "factory", "default", "clear", "wipe", "backup", "restore",
-    "start", "stop", "enable", "disable", "kick", "block",
-    "ping", "trace", "diag", "test",
-})
+_MUTATING_TOKENS = frozenset(
+    {
+        "add",
+        "set",
+        "del",
+        "delete",
+        "remove",
+        "update",
+        "edit",
+        "save",
+        "submit",
+        "apply",
+        "action",
+        "restart",
+        "reboot",
+        "reset",
+        "logout",
+        "logoff",
+        "upgrade",
+        "upload",
+        "download",
+        "export",
+        "import",
+        "factory",
+        "default",
+        "clear",
+        "wipe",
+        "backup",
+        "restore",
+        "start",
+        "stop",
+        "enable",
+        "disable",
+        "kick",
+        "block",
+        "ping",
+        "trace",
+        "diag",
+        "test",
+    }
+)
 
 # A few AGZHM tags concatenate an action with a role suffix instead of using
 # an underscore (for example ``restartmgr``). Restrict prefix matching to
 # those known action families; importantly, generic ``set*`` is NOT here, so
 # read-only nouns such as ``setting`` / ``settings`` are not false positives.
 _MUTATING_COMPOUND_PREFIXES = (
-    "restartmgr", "rebootmgr", "resetmgr", "upgrademgr",
-    "download", "upload", "backup", "restore",
+    "restartmgr",
+    "rebootmgr",
+    "resetmgr",
+    "upgrademgr",
+    "download",
+    "upload",
+    "backup",
+    "restore",
 )
 
 # Asset extensions worth fetching to mine for endpoint references.
 _ASSET_EXTS = (".html", ".htm", ".js", ".lua", ".css", ".json", ".xml")
 
 _DIFF_FIELDS = (
-    "fetched", "skipped_reason", "status", "content_type", "shape",
-    "root_element", "instance_count", "field_names", "error",
+    "fetched",
+    "skipped_reason",
+    "status",
+    "content_type",
+    "shape",
+    "root_element",
+    "instance_count",
+    "field_names",
+    "error",
 )
 
 
-def _endpoint_identity(endpoint: Dict[str, Any]) -> Tuple[str, str, Tuple[Tuple[str, str], ...]]:
+def _endpoint_identity(
+    endpoint: Dict[str, Any],
+) -> Tuple[str, str, Tuple[Tuple[str, str], ...]]:
     extras = endpoint.get("extras")
     if not isinstance(extras, dict):
         extras = {}
@@ -141,14 +188,16 @@ def compare_discovery_reports(
             if old.get(field) != new.get(field)
         }
         if fields:
-            changed.append({
-                "key": {
-                    "type": key[0],
-                    "tag": key[1],
-                    "extras": dict(key[2]),
-                },
-                "fields": fields,
-            })
+            changed.append(
+                {
+                    "key": {
+                        "type": key[0],
+                        "tag": key[1],
+                        "extras": dict(key[2]),
+                    },
+                    "fields": fields,
+                }
+            )
 
     return {
         "summary": {
@@ -164,12 +213,13 @@ def compare_discovery_reports(
 
 # ------------------------------------------------------------------ models
 
+
 @dataclass
 class Endpoint:
     """A single discovered URL of shape ``/?_type=...&_tag=...``."""
 
-    type: str                          # e.g. "menuData", "menuView", "loginData"
-    tag: str                           # e.g. "devmgr_statusmgr_lua.lua"
+    type: str  # e.g. "menuData", "menuView", "loginData"
+    tag: str  # e.g. "devmgr_statusmgr_lua.lua"
     extras: Dict[str, str] = field(default_factory=dict)
     discovered_in: List[str] = field(default_factory=list)
 
@@ -192,7 +242,7 @@ class Endpoint:
     root_element: Optional[str] = None
     instance_count: Optional[int] = None
     field_names: List[str] = field(default_factory=list)
-    sample: Optional[str] = None       # first ~600 chars of the response
+    sample: Optional[str] = None  # first ~600 chars of the response
     error: Optional[str] = None
 
     def url(self) -> str:
@@ -301,7 +351,9 @@ class Spider:
         self.sample_chars = sample_chars
         self.progress_cb = progress_cb
 
-        self._endpoints: Dict[Tuple[str, str, Tuple[Tuple[str, str], ...]], Endpoint] = {}
+        self._endpoints: Dict[
+            Tuple[str, str, Tuple[Tuple[str, str], ...]], Endpoint
+        ] = {}
         self._assets: Dict[str, Asset] = {}
         self._asset_queue: deque = deque()
         self._endpoint_queue: deque = deque()
@@ -414,7 +466,9 @@ class Spider:
                     view_tag = node_id
                     # Browser sends Menu3Location=0 by default for menuView GETs.
                     if self._record_endpoint(
-                        "menuView", node_id, {"Menu3Location": "0"},
+                        "menuView",
+                        node_id,
+                        {"Menu3Location": "0"},
                         source=f"{source}#menuTreeJSON",
                     ):
                         added += 1
@@ -426,7 +480,9 @@ class Spider:
                         if view_tag and a not in self._data_parent_view:
                             self._data_parent_view[a] = view_tag
                         if self._record_endpoint(
-                            "menuData", a, {},
+                            "menuData",
+                            a,
+                            {},
                             source=f"{source}#menuTreeJSON",
                         ):
                             added += 1
@@ -442,8 +498,9 @@ class Spider:
         out: List[str] = []
         for m in _RE_ATTR_URL.finditer(text):
             url = m.group("url").strip()
-            if not url or url.startswith(("data:", "javascript:", "mailto:", "#",
-                                          "http://", "https://", "//")):
+            if not url or url.startswith(
+                ("data:", "javascript:", "mailto:", "#", "http://", "https://", "//")
+            ):
                 continue
             out.append(url)
         return out
@@ -648,7 +705,10 @@ class Spider:
                 if retry_session and self.api.login():
                     # Re-arm menuData after login before replaying it; login resets
                     # the per-session WebUI navigation state on AGZHM firmware.
-                    if ep.type == "menuData" and self._requests_made < self.max_requests:
+                    if (
+                        ep.type == "menuData"
+                        and self._requests_made < self.max_requests
+                    ):
                         parent = self._data_parent_view.get(ep.tag)
                         if parent:
                             self._arm_view(parent, source=f"rearm-for:{ep.url()}")
@@ -778,15 +838,14 @@ class Spider:
         kind_counts: Counter = Counter(d["type"] for d in endpoints)
         fetched = sum(1 for d in endpoints if d["fetched"])
         with_data = sum(
-            1 for d in endpoints
+            1
+            for d in endpoints
             if d["fetched"] and d["shape"] in ("xml-instances", "xml-flat", "json")
         )
         shape_counts = Counter(
             d["shape"] for d in endpoints if d["fetched"] and d["shape"]
         )
-        skipped = Counter(
-            d["skipped_reason"] for d in endpoints if d["skipped_reason"]
-        )
+        skipped = Counter(d["skipped_reason"] for d in endpoints if d["skipped_reason"])
         assets = sorted(
             (a.to_dict() for a in self._assets.values()),
             key=lambda d: d["path"],

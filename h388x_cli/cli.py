@@ -7,20 +7,29 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import typer
-from dotenv import load_dotenv
-from rich.console import Console
 from rich.live import Live
 from rich.table import Table
-from rich.text import Text
 
 from .api import ZTEH388XAPI
-from .devices import (
-    apply_import_plan as _apply_import_plan,
-    merge_devices as _merge_devices,
-    norm_mac as _norm_mac,
-    plan_import as _plan_import,
-    reservations_export as _reservations_export,
+from .cli_devices import (
+    _merge_devices,
+    _norm_mac,
+    _plan_import,
+    _reservations_export,
+    devices_app,
 )
+from .cli_runtime import (
+    _emit_json,
+    _host_opt,
+    _insecure_opt,
+    _pwd_opt,
+    _user_opt,
+    console,
+    get_api,
+    state,
+)
+
+
 from .discovery import Spider
 from .errors import H388XError
 from .discovery import compare_discovery_reports
@@ -73,19 +82,15 @@ from .models import (
     WifiSsidConfig,
 )
 
-load_dotenv()
+# Backward-compatible internal helper aliases retained across the CLI split.
+_LEGACY_DEVICE_HELPERS = (
+    _norm_mac,
+    _merge_devices,
+    _reservations_export,
+    _plan_import,
+)
 
 app = typer.Typer(help="H388X Modem CLI Management Tool", no_args_is_help=True)
-console = Console()
-
-
-# --------------------------------------------------------------------- state
-
-class State:
-    json: bool = False
-
-
-state = State()
 
 
 @app.callback()
@@ -99,6 +104,7 @@ def main(
 
 
 # ---------------------------------------------------------------- formatters
+
 
 def _deci(value: Optional[int], unit: str) -> str:
     if value is None:
@@ -127,95 +133,8 @@ def _format_firmware_date(raw: Optional[str]) -> str:
     return f"{raw[0:4]}-{raw[4:6]}-{raw[6:8]} {raw[8:10]}:{raw[10:12]}:{raw[12:14]}"
 
 
-def _emit_json(payload: Any) -> None:
-    """Print a single JSON document to stdout."""
-    json.dump(payload, sys.stdout, indent=2, default=str)
-    sys.stdout.write("\n")
-    sys.stdout.flush()
-
-
-# ------------------------------------------------------------------ options
-
-def _host_opt() -> str:
-    # Backward compat: keep accepting H388X_IP if H388X_HOST is unset.
-    default = os.getenv("H388X_HOST") or os.getenv("H388X_IP", "192.168.1.1")
-    return typer.Option(
-        default,
-        "--host",
-        "-H",
-        help=(
-            "Modem host: IP, hostname, or full URL. Examples: "
-            "`192.168.1.1`, `modem.example.com`, "
-            "`https://modem.example.com:8443`. "
-            "Plain hostnames default to http://."
-        ),
-    )
-
-
-def _user_opt() -> str:
-    return typer.Option(os.getenv("H388X_USER", "admin"), help="Admin username")
-
-
-def _pwd_opt() -> Optional[str]:
-    return typer.Option(None, help="Admin password (or set H388X_PASSWORD)")
-
-
-def _insecure_opt() -> bool:
-    return typer.Option(
-        False,
-        "--insecure",
-        "-k",
-        help="Skip TLS certificate verification (useful for self-signed HTTPS).",
-    )
-
-
-def get_api(
-    host: str,
-    user: str,
-    password: Optional[str],
-    insecure: bool = False,
-) -> ZTEH388XAPI:
-    password = password or os.getenv("H388X_PASSWORD", "")
-    if not password:
-        console.print(
-            "[red]Error: Password is required. "
-            "Set H388X_PASSWORD in .env or use --password.[/red]"
-        )
-        raise typer.Exit(code=1)
-
-    if insecure:
-        # urllib3 yells loudly when verify=False; silence it once, not per call.
-        try:
-            import urllib3
-            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-        except Exception:
-            pass
-
-    api = ZTEH388XAPI(
-        host=host, username=user, password=password, verify_tls=not insecure
-    )
-    # If a cached session was loaded from disk during ``__init__``, skip the
-    # login handshake entirely. The first authenticated request will either
-    # succeed or hit ``SessionTimeout``, in which case the ``_menudata``
-    # retry path re-runs ``login()`` once and refreshes the cache.
-    if api.has_cached_session:
-        return api
-
-    if state.json:
-        ok = api.login()
-    else:
-        with console.status("[bold green]Connecting to modem..."):
-            ok = api.login()
-    if not ok:
-        console.print(
-            "[red]Login failed. Check credentials, IP and that no other "
-            "admin session is open in a browser.[/red]"
-        )
-        raise typer.Exit(code=1)
-    return api
-
-
 # -------------------------------------------------------------- table builders
+
 
 def _stats_table(s: DSLStats) -> Table:
     table = Table(title="DSL Statistics")
@@ -246,11 +165,14 @@ def _stats_table(s: DSLStats) -> Table:
         f"{_deci(s.downstream_power, 'dBm')} / {_deci(s.upstream_power, 'dBm')}",
     )
     table.add_row("Line Uptime", _humanize_uptime(s.showtime_start))
-    table.add_row("FEC Errors", str(s.fec_errors) if s.fec_errors is not None else "N/A")
+    table.add_row(
+        "FEC Errors", str(s.fec_errors) if s.fec_errors is not None else "N/A"
+    )
     return table
 
 
 # ---------------------------------------------------------------------- stats
+
 
 @app.command()
 def stats(
@@ -311,6 +233,7 @@ def stats(
 
 # ----------------------------------------------------------------------- info
 
+
 @app.command()
 def info(
     host: str = _host_opt(),
@@ -345,6 +268,7 @@ def info(
 
 
 # ------------------------------------------------------------------------ wan
+
 
 @app.command()
 def wan(
@@ -385,9 +309,7 @@ def wan(
         table.add_column("Services", style="yellow")
 
         for c in conns:
-            dns = ", ".join(
-                d for d in [c.dns1, c.dns2, c.dns3] if d and d != "0.0.0.0"
-            )
+            dns = ", ".join(d for d in [c.dns1, c.dns2, c.dns3] if d and d != "0.0.0.0")
             status_color = "green" if (c.status or "").lower() == "connected" else "red"
             table.add_row(
                 c.name or "N/A",
@@ -407,6 +329,7 @@ def wan(
 
 
 # -------------------------------------------------------------------- clients
+
 
 @app.command()
 def clients(
@@ -449,10 +372,12 @@ def clients(
         all_clients: List[Client] = lan + wifi
 
         if state.json:
-            _emit_json({
-                "lan": [c.model_dump() for c in lan],
-                "wifi": [c.model_dump() for c in wifi],
-            })
+            _emit_json(
+                {
+                    "lan": [c.model_dump() for c in lan],
+                    "wifi": [c.model_dump() for c in wifi],
+                }
+            )
             return
 
         table = Table(title=f"Connected Devices ({len(all_clients)})")
@@ -477,6 +402,7 @@ def clients(
 
 # ---------------------------------------------------------------------- wifi
 
+
 def _onoff(value: Optional[int]) -> str:
     if value is None:
         return "N/A"
@@ -491,9 +417,13 @@ def _security_label(ap: WifiAP) -> str:
     # ZTE encodes WPA2 fields under 11i*; WPA1 under WPA*.
     parts: List[str] = []
     if ap.wpa2_auth_mode:
-        parts.append(f"WPA2-{ap.wpa2_auth_mode.replace('Authentication', '')}/{ap.wpa2_encrypt or '?'}")
+        parts.append(
+            f"WPA2-{ap.wpa2_auth_mode.replace('Authentication', '')}/{ap.wpa2_encrypt or '?'}"
+        )
     elif ap.wpa_auth_mode:
-        parts.append(f"WPA-{ap.wpa_auth_mode.replace('Authentication', '')}/{ap.wpa_encrypt or '?'}")
+        parts.append(
+            f"WPA-{ap.wpa_auth_mode.replace('Authentication', '')}/{ap.wpa_encrypt or '?'}"
+        )
     return " ".join(parts) or bt or "N/A"
 
 
@@ -513,10 +443,12 @@ def wifi(
         aps = [WifiAP.model_validate(r) for r in aps_raw]
 
         if state.json:
-            _emit_json({
-                "radios": [r.model_dump() for r in radios],
-                "aps": [a.model_dump() for a in aps],
-            })
+            _emit_json(
+                {
+                    "radios": [r.model_dump() for r in radios],
+                    "aps": [a.model_dump() for a in aps],
+                }
+            )
             return
 
         if not radios and not aps:
@@ -577,12 +509,14 @@ def firewall(
         dmz = Dmz.model_validate(api.get_dmz() or {})
 
         if state.json:
-            _emit_json({
-                "level": level.model_dump(),
-                "dos": dos.model_dump(),
-                "url_filter": urlf.model_dump(),
-                "dmz": dmz.model_dump(),
-            })
+            _emit_json(
+                {
+                    "level": level.model_dump(),
+                    "dos": dos.model_dump(),
+                    "url_filter": urlf.model_dump(),
+                    "dmz": dmz.model_dump(),
+                }
+            )
             return
 
         table = Table(title="Firewall")
@@ -613,6 +547,7 @@ def firewall(
 
 
 # --------------------------------------------------------------- port-forward
+
 
 def _port_range(start: Optional[int], end: Optional[int]) -> str:
     if start is None:
@@ -678,9 +613,7 @@ def port_forward(
             )
         console.print(table)
         if not all_:
-            console.print(
-                "[dim]Tip: pass --all to also show disabled rules.[/dim]"
-            )
+            console.print("[dim]Tip: pass --all to also show disabled rules.[/dim]")
     finally:
         api.close()
 
@@ -688,9 +621,7 @@ def port_forward(
 @app.command("port-forward-add")
 def port_forward_add(
     description: str = typer.Argument(..., help="Free-form rule name."),
-    protocol: str = typer.Argument(
-        ..., help="TCP | UDP | BOTH (case-insensitive)."
-    ),
+    protocol: str = typer.Argument(..., help="TCP | UDP | BOTH (case-insensitive)."),
     external_port: int = typer.Argument(
         ..., min=1, max=65535, help="WAN port to expose."
     ),
@@ -698,25 +629,32 @@ def port_forward_add(
         ..., help="LAN IPv4 to forward the traffic to."
     ),
     internal_port: Optional[int] = typer.Option(
-        None, "--int-port",
-        min=1, max=65535,
+        None,
+        "--int-port",
+        min=1,
+        max=65535,
         help="LAN port (default: same as EXTERNAL_PORT).",
     ),
     external_port_end: Optional[int] = typer.Option(
-        None, "--ext-port-end",
-        min=1, max=65535,
+        None,
+        "--ext-port-end",
+        min=1,
+        max=65535,
         help="End of WAN port range (default: same as EXTERNAL_PORT).",
     ),
     remote_host: str = typer.Option(
-        "0.0.0.0", "--remote-host",
+        "0.0.0.0",
+        "--remote-host",
         help='Source IP restriction. "0.0.0.0" = any (default).',
     ),
     remote_host_end: str = typer.Option(
-        "0.0.0.0", "--remote-host-end",
+        "0.0.0.0",
+        "--remote-host-end",
         help='End of source IP range. "0.0.0.0" = same as --remote-host.',
     ),
     disable: bool = typer.Option(
-        False, "--disable",
+        False,
+        "--disable",
         help="Create the rule disabled (defaults to enabled).",
     ),
     host: str = _host_opt(),
@@ -749,14 +687,17 @@ def port_forward_add(
 
         rows = api.get_port_forwarding_rules()
         new_rules = [
-            PortForwardingRule.model_validate(r) for r in rows
+            PortForwardingRule.model_validate(r)
+            for r in rows
             if r.get("Description") == description
         ]
         if state.json:
-            _emit_json({
-                "ok": True,
-                "added": [r.model_dump() for r in new_rules],
-            })
+            _emit_json(
+                {
+                    "ok": True,
+                    "added": [r.model_dump() for r in new_rules],
+                }
+            )
             return
         if new_rules:
             r = new_rules[-1]
@@ -785,7 +726,9 @@ def port_forward_del(
         ),
     ),
     yes: bool = typer.Option(
-        False, "-y", "--yes",
+        False,
+        "-y",
+        "--yes",
         help="Skip the confirmation prompt.",
     ),
     host: str = _host_opt(),
@@ -802,9 +745,7 @@ def port_forward_del(
     api = get_api(host, user, password, insecure)
     try:
         rows = api.get_port_forwarding_rules()
-        target = next(
-            (r for r in rows if r.get("_OBJ_InstID") == inst_id), None
-        )
+        target = next((r for r in rows if r.get("_OBJ_InstID") == inst_id), None)
         if target is None:
             if state.json:
                 _emit_json({"ok": False, "error": f"rule {inst_id!r} not found"})
@@ -853,7 +794,8 @@ def port_forward_toggle(
         ),
     ),
     enable: Optional[bool] = typer.Option(
-        None, "--on/--off",
+        None,
+        "--on/--off",
         help="Force enabled (--on) or disabled (--off). Default: flip current.",
     ),
     host: str = _host_opt(),
@@ -882,7 +824,14 @@ def port_forward_toggle(
         new_state = (not currently_on) if enable is None else enable
         if new_state == currently_on:
             if state.json:
-                _emit_json({"ok": True, "id": inst_id, "enabled": currently_on, "changed": False})
+                _emit_json(
+                    {
+                        "ok": True,
+                        "id": inst_id,
+                        "enabled": currently_on,
+                        "changed": False,
+                    }
+                )
             else:
                 console.print(
                     f"[yellow]Rule [bold]{inst_id}[/bold] already "
@@ -900,7 +849,9 @@ def port_forward_toggle(
                 )
             raise typer.Exit(code=1)
         if state.json:
-            _emit_json({"ok": True, "id": inst_id, "enabled": new_state, "changed": True})
+            _emit_json(
+                {"ok": True, "id": inst_id, "enabled": new_state, "changed": True}
+            )
         else:
             console.print(
                 f"[green]{'Enabled' if new_state else 'Disabled'}[/green] "
@@ -957,9 +908,17 @@ def port_forward_edit(
         else f"DEV.NAT.PtMapping{rule_id}"
     )
     if all(
-        v is None for v in (
-            description, protocol, external_port, external_port_end,
-            internal_client, internal_port, remote_host, remote_host_end, enable,
+        v is None
+        for v in (
+            description,
+            protocol,
+            external_port,
+            external_port_end,
+            internal_client,
+            internal_port,
+            remote_host,
+            remote_host_end,
+            enable,
         )
     ):
         console.print("[yellow]Nothing to change (pass at least one field).[/yellow]")
@@ -969,10 +928,14 @@ def port_forward_edit(
     try:
         ok, body = api.edit_port_forwarding_rule(
             inst_id,
-            description=description, protocol=protocol,
-            external_port=external_port, external_port_end=external_port_end,
-            internal_client=internal_client, internal_port=internal_port,
-            remote_host=remote_host, remote_host_end=remote_host_end,
+            description=description,
+            protocol=protocol,
+            external_port=external_port,
+            external_port_end=external_port_end,
+            internal_client=internal_client,
+            internal_port=internal_port,
+            remote_host=remote_host,
+            remote_host_end=remote_host_end,
             enable=enable,
         )
         if not ok:
@@ -987,11 +950,14 @@ def port_forward_edit(
         rows = api.get_port_forwarding_rules()
         updated = next((r for r in rows if r.get("_OBJ_InstID") == inst_id), None)
         if state.json:
-            _emit_json({
-                "ok": True,
-                "updated": PortForwardingRule.model_validate(updated).model_dump()
-                if updated else None,
-            })
+            _emit_json(
+                {
+                    "ok": True,
+                    "updated": PortForwardingRule.model_validate(updated).model_dump()
+                    if updated
+                    else None,
+                }
+            )
             return
         if updated:
             r = PortForwardingRule.model_validate(updated)
@@ -1012,6 +978,7 @@ def port_forward_edit(
 
 # ------------------------------------------------------------------------ dns
 
+
 @app.command()
 def dns(
     host: str = _host_opt(),
@@ -1026,10 +993,12 @@ def dns(
         hosts = [DnsHostname.model_validate(r) for r in api.get_dns_hostnames()]
 
         if state.json:
-            _emit_json({
-                "local": local.model_dump(),
-                "hostnames": [h.model_dump() for h in hosts],
-            })
+            _emit_json(
+                {
+                    "local": local.model_dump(),
+                    "hostnames": [h.model_dump() for h in hosts],
+                }
+            )
             return
 
         local_table = Table(title="Local DNS")
@@ -1053,7 +1022,8 @@ def dns(
         hosts_table.add_column("Lease", style="yellow")
         for h in sorted(hosts, key=lambda x: x.ip_address or ""):
             lease = (
-                "static" if h.lease_time == 0
+                "static"
+                if h.lease_time == 0
                 else (str(h.lease_time) + "s" if h.lease_time is not None else "-")
             )
             hosts_table.add_row(
@@ -1076,7 +1046,8 @@ def dns_set(
         None, "--dns2", help="Secondary DNS server (optional)."
     ),
     from_wan: bool = typer.Option(
-        False, "--from-wan",
+        False,
+        "--from-wan",
         help="Use the ISP-provided DNS instead of manual servers (ignores DNS1).",
     ),
     host: str = _host_opt(),
@@ -1107,16 +1078,26 @@ def dns_set(
             raise typer.Exit(code=1)
         after = api.get_dhcp_config()
         if state.json:
-            _emit_json({
-                "ok": True,
-                "before": {"dns1": before.get("DNSServer1"), "dns2": before.get("DNSServer2"),
-                           "source": before.get("DnsServerSource")},
-                "after": {"dns1": after.get("DNSServer1"), "dns2": after.get("DNSServer2"),
-                          "source": after.get("DnsServerSource")},
-            })
+            _emit_json(
+                {
+                    "ok": True,
+                    "before": {
+                        "dns1": before.get("DNSServer1"),
+                        "dns2": before.get("DNSServer2"),
+                        "source": before.get("DnsServerSource"),
+                    },
+                    "after": {
+                        "dns1": after.get("DNSServer1"),
+                        "dns2": after.get("DNSServer2"),
+                        "source": after.get("DnsServerSource"),
+                    },
+                }
+            )
             return
         if after.get("DnsServerSource") == "1":
-            console.print("[green]DNS source set to[/green] [bold]ISP / from WAN[/bold].")
+            console.print(
+                "[green]DNS source set to[/green] [bold]ISP / from WAN[/bold]."
+            )
         else:
             console.print(
                 f"[green]DNS push updated[/green]: "
@@ -1129,6 +1110,7 @@ def dns_set(
 
 
 # ------------------------------------------------------------------ mac-table
+
 
 @app.command("mac-table")
 def mac_table(
@@ -1154,9 +1136,7 @@ def mac_table(
         table.add_column("Age", style="magenta", justify="right")
 
         for e in sorted(entries, key=lambda x: (x.interface or "", x.mac or "")):
-            age = (
-                f"{e.aging_time:.1f}s" if e.aging_time is not None else "-"
-            )
+            age = f"{e.aging_time:.1f}s" if e.aging_time is not None else "-"
             table.add_row(
                 e.mac or "-",
                 str(e.vlan_id) if e.vlan_id is not None else "-",
@@ -1169,6 +1149,7 @@ def mac_table(
 
 
 # ------------------------------------------------------------------------ arp
+
 
 @app.command()
 def arp(
@@ -1212,6 +1193,7 @@ def arp(
 
 # ----------------------------------------------------------------------- ddns
 
+
 @app.command()
 def ddns(
     host: str = _host_opt(),
@@ -1244,6 +1226,7 @@ def ddns(
 
 
 # ------------------------------------------------------------------------ eth
+
 
 def _human_bytes(n: Optional[int]) -> str:
     if n is None:
@@ -1287,10 +1270,12 @@ def eth(
         wan = EthInterface.model_validate(wan_row or {}) if wan_row else None
 
         if state.json:
-            _emit_json({
-                "lan": [p.model_dump() for p in lan],
-                "wan": wan.model_dump() if wan else None,
-            })
+            _emit_json(
+                {
+                    "lan": [p.model_dump() for p in lan],
+                    "wan": wan.model_dump() if wan else None,
+                }
+            )
             return
 
         lan_table = Table(title=f"LAN ports ({len(lan)})")
@@ -1304,8 +1289,7 @@ def eth(
         for p in lan:
             up = (p.status or "").lower() == "up"
             status = (
-                f"[green]{p.status}[/green]" if up
-                else f"[dim]{p.status or '-'}[/dim]"
+                f"[green]{p.status}[/green]" if up else f"[dim]{p.status or '-'}[/dim]"
             )
             lan_table.add_row(
                 p.alias or (p.id or "-"),
@@ -1350,6 +1334,7 @@ def eth(
 
 # ----------------------------------------------------------------------- dhcp
 
+
 def _format_lease(seconds: Optional[int]) -> str:
     if seconds is None:
         return "-"
@@ -1390,10 +1375,12 @@ def dhcp(
         bindings = [DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings()]
 
         if state.json:
-            _emit_json({
-                "config": cfg.model_dump(),
-                "bindings": [b.model_dump() for b in bindings],
-            })
+            _emit_json(
+                {
+                    "config": cfg.model_dump(),
+                    "bindings": [b.model_dump() for b in bindings],
+                }
+            )
             return
 
         cfg_table = Table(title="DHCPv4 server")
@@ -1409,7 +1396,9 @@ def dhcp(
         cfg_table.add_row("Lease time", _format_lease(cfg.lease_time))
         cfg_table.add_row(
             "DNS source",
-            _DNS_SOURCE_LABEL.get(cfg.dns_source, str(cfg.dns_source)) if cfg.dns_source is not None else "-",
+            _DNS_SOURCE_LABEL.get(cfg.dns_source, str(cfg.dns_source))
+            if cfg.dns_source is not None
+            else "-",
         )
         cfg_table.add_row("DNS 1 (pushed)", cfg.dns1 or "-")
         cfg_table.add_row("DNS 2 (pushed)", cfg.dns2 or "-")
@@ -1441,12 +1430,8 @@ _DHCP_BIND_ID_PREFIX = "DEV.V4DP.Sr.Pl1.Bd"
 
 @app.command("dhcp-reserve-add")
 def dhcp_reserve_add(
-    mac: str = typer.Argument(
-        ..., help="Client MAC address (e.g. AA:BB:CC:DD:EE:FF)."
-    ),
-    ip_address: str = typer.Argument(
-        ..., help="LAN IPv4 to bind to this MAC."
-    ),
+    mac: str = typer.Argument(..., help="Client MAC address (e.g. AA:BB:CC:DD:EE:FF)."),
+    ip_address: str = typer.Argument(..., help="LAN IPv4 to bind to this MAC."),
     name: str = typer.Argument(
         ..., help="Free-form hostname/label for the reservation."
     ),
@@ -1459,7 +1444,9 @@ def dhcp_reserve_add(
     api = get_api(host, user, password, insecure)
     try:
         ok, body = api.add_dhcp_reservation(
-            mac=mac, ip_address=ip_address, name=name,
+            mac=mac,
+            ip_address=ip_address,
+            name=name,
         )
         if not ok:
             if state.json:
@@ -1472,14 +1459,17 @@ def dhcp_reserve_add(
 
         rows = api.get_dhcp_bindings()
         new_rows = [
-            DhcpBinding.model_validate(r) for r in rows
+            DhcpBinding.model_validate(r)
+            for r in rows
             if (r.get("MACAddr") or "").lower() == mac.lower()
         ]
         if state.json:
-            _emit_json({
-                "ok": True,
-                "added": [b.model_dump() for b in new_rows],
-            })
+            _emit_json(
+                {
+                    "ok": True,
+                    "added": [b.model_dump() for b in new_rows],
+                }
+            )
             return
         if new_rows:
             b = new_rows[-1]
@@ -1512,7 +1502,9 @@ def dhcp_reserve_del(
         ),
     ),
     yes: bool = typer.Option(
-        False, "-y", "--yes",
+        False,
+        "-y",
+        "--yes",
         help="Skip the confirmation prompt.",
     ),
     host: str = _host_opt(),
@@ -1529,14 +1521,14 @@ def dhcp_reserve_del(
     api = get_api(host, user, password, insecure)
     try:
         rows = api.get_dhcp_bindings()
-        target = next(
-            (r for r in rows if r.get("_OBJ_InstID") == inst_id), None
-        )
+        target = next((r for r in rows if r.get("_OBJ_InstID") == inst_id), None)
         if target is None:
             if state.json:
                 _emit_json({"ok": False, "error": f"binding {inst_id!r} not found"})
             else:
-                console.print(f"[red]No reservation with id[/red] [bold]{inst_id}[/bold].")
+                console.print(
+                    f"[red]No reservation with id[/red] [bold]{inst_id}[/bold]."
+                )
             raise typer.Exit(code=1)
 
         if not yes and not state.json:
@@ -1562,503 +1554,18 @@ def dhcp_reserve_del(
         if state.json:
             _emit_json({"ok": True, "deleted": inst_id})
         else:
-            console.print(
-                f"[green]Deleted[/green] reservation [bold]{inst_id}[/bold]."
-            )
+            console.print(f"[green]Deleted[/green] reservation [bold]{inst_id}[/bold].")
     finally:
         api.close()
 
 
 # -------------------------------------------------------------------- devices
 
-# Device-naming feature (route A): DHCP reservations (MAC -> fixed IP + Name)
-# are the primary, MAC-keyed naming layer. The ``devices`` view merges the
-# currently-connected clients (LAN + Wi-Fi) with the static reservations,
-# keyed by MAC, so the observed DHCP hostname and the assigned reservation
-# name stay visually distinct.
-
-devices_app = typer.Typer(
-    help=(
-        "Device naming (DHCP reservations, MAC-keyed). Bare `devices` lists "
-        "connected clients merged with reservations."
-    ),
-    no_args_is_help=False,
-)
 app.add_typer(devices_app, name="devices")
 
 
-@devices_app.callback(invoke_without_command=True)
-def devices_main(
-    ctx: typer.Context,
-    host: str = _host_opt(),
-    user: str = _user_opt(),
-    password: Optional[str] = _pwd_opt(),
-    insecure: bool = _insecure_opt(),
-):
-    """List connected devices (LAN + Wi-Fi) merged with DHCP reservations."""
-    if ctx.invoked_subcommand is not None:
-        return
-
-    api = get_api(host, user, password, insecure)
-    try:
-        clients = (
-            [Client.model_validate(r) for r in api.get_lan_clients()]
-            + [Client.model_validate(r) for r in api.get_wifi_clients()]
-        )
-        bindings = [DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings()]
-        rows = _merge_devices(clients, bindings)
-
-        if state.json:
-            _emit_json(sorted(rows, key=lambda r: r.get("ipv4") or ""))
-            return
-
-        table = Table(title=f"Devices ({len(rows)})")
-        table.add_column("Name", style="cyan")
-        table.add_column("Hostname (DHCP)", style="dim")
-        table.add_column("IPv4", style="green")
-        table.add_column("MAC")
-        table.add_column("Interface", style="yellow")
-        table.add_column("Online")
-        table.add_column("Reserved")
-
-        for r in sorted(rows, key=lambda r: r.get("ipv4") or ""):
-            online = "[green]yes[/green]" if r["online"] else "[red]no[/red]"
-            reserved = "[green]yes[/green]" if r["reserved"] else "[dim]no[/dim]"
-            # MACs contain segments like ``:ab:``/``:cd:`` that rich would
-            # treat as emoji shortcodes; render as plain Text so they show
-            # verbatim.
-            table.add_row(
-                r["name"] or "-",
-                r["hostname"] or "-",
-                r["ipv4"] or "-",
-                Text(r["mac"] or "-"),
-                r["interface"] or "-",
-                online,
-                reserved,
-            )
-        console.print(table)
-        console.print(
-            "[dim]Tip: 'Name' = assigned reservation, 'Hostname' = "
-            "observed via DHCP (read-only).[/dim]"
-        )
-    finally:
-        api.close()
-
-
-@devices_app.command("export")
-def devices_export(
-    file: Optional[str] = typer.Argument(
-        None,
-        help="Output file. Writes to stdout when omitted.",
-    ),
-    host: str = _host_opt(),
-    user: str = _user_opt(),
-    password: Optional[str] = _pwd_opt(),
-    insecure: bool = _insecure_opt(),
-):
-    """Export DHCP reservations as portable JSON ``[{mac, ip, name}]``."""
-    api = get_api(host, user, password, insecure)
-    try:
-        bindings = [DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings()]
-        data = _reservations_export(bindings)
-    finally:
-        api.close()
-
-    if file:
-        with open(file, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2)
-            fh.write("\n")
-        if not state.json:
-            console.print(
-                f"[green]Exported[/green] {len(data)} reservation(s) to "
-                f"[bold]{file}[/bold]."
-            )
-    else:
-        _emit_json(data)
-
-
-@devices_app.command("import")
-def devices_import(
-    file: str = typer.Argument(
-        ..., help="JSON file with [{mac, ip, name}] entries to apply."
-    ),
-    dry_run: bool = typer.Option(
-        False,
-        "--dry-run",
-        help="Validate and show the diff without writing anything to the modem.",
-    ),
-    host: str = _host_opt(),
-    user: str = _user_opt(),
-    password: Optional[str] = _pwd_opt(),
-    insecure: bool = _insecure_opt(),
-):
-    """Apply reservation names from JSON with validation-first semantics.
-
-    The complete plan is validated before the first write. During apply the
-    command stops at the first failed write and reports partial application.
-    """
-    try:
-        with open(file, "r", encoding="utf-8") as fh:
-            entries = json.load(fh)
-    except (OSError, json.JSONDecodeError) as exc:
-        if state.json:
-            _emit_json({"ok": False, "error": f"cannot read {file!r}: {exc}"})
-        else:
-            console.print(f"[red]Cannot read[/red] [bold]{file}[/bold]: {exc}")
-        raise typer.Exit(code=1)
-
-    if not isinstance(entries, list):
-        if state.json:
-            _emit_json({"ok": False, "error": "JSON root must be a list"})
-        else:
-            console.print("[red]JSON root must be a list of {mac, ip, name}.[/red]")
-        raise typer.Exit(code=1)
-
-    api = get_api(host, user, password, insecure)
-    try:
-        bindings = [DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings()]
-        plan = _plan_import(entries, bindings)
-        preflight_errors = sum(1 for item in plan if item["action"] == "error")
-
-        if dry_run:
-            apply_ok = preflight_errors == 0
-            summary = {
-                "applied": 0,
-                "failed": 0,
-                "skipped": 0,
-                "partial": False,
-                "preflight_errors": preflight_errors,
-            }
-        else:
-            apply_ok, summary = _apply_import_plan(api, plan)
-
-        if state.json:
-            _emit_json({
-                "ok": apply_ok,
-                "dry_run": dry_run,
-                "summary": summary,
-                "plan": plan,
-            })
-            if not apply_ok:
-                raise typer.Exit(code=1)
-            return
-
-        table = Table(title=f"Import plan ({'dry-run' if dry_run else 'applied'})")
-        table.add_column("Action")
-        table.add_column("Name", style="cyan")
-        table.add_column("IP", style="green")
-        table.add_column("MAC")
-        table.add_column("Detail", style="dim")
-        colors = {"add": "green", "edit": "yellow", "unchanged": "dim", "error": "red"}
-        for item in plan:
-            action = item["action"]
-            color = colors.get(action, "white")
-            if action == "edit":
-                detail = f"was: {item['old_name'] or '-'} / {item['old_ip'] or '-'}"
-            elif action == "error":
-                detail = item.get("error", "")
-            else:
-                detail = ""
-            if item.get("skipped"):
-                action = f"{action} SKIPPED"
-                color = "yellow"
-                detail = item["skipped"]
-            elif not dry_run and "ok" in item and not item["ok"]:
-                action = f"{action} FAILED"
-                color = "red"
-                detail = item.get("raw", detail)
-            table.add_row(
-                f"[{color}]{action}[/{color}]",
-                item["name"] or "-",
-                item["ip"] or "-",
-                Text(item["mac"] or "-"),
-                detail,
-            )
-        console.print(table)
-        n_add = sum(1 for item in plan if item["action"] == "add")
-        n_edit = sum(1 for item in plan if item["action"] == "edit")
-        n_same = sum(1 for item in plan if item["action"] == "unchanged")
-        n_err = sum(1 for item in plan if item["action"] == "error")
-        console.print(
-            f"[dim]add={n_add} edit={n_edit} unchanged={n_same} error={n_err} "
-            f"applied={summary['applied']} failed={summary['failed']} "
-            f"skipped={summary['skipped']}"
-            + ("  (dry-run, nothing written)" if dry_run else "")
-            + "[/dim]"
-        )
-        if not apply_ok:
-            if summary.get("partial"):
-                console.print(
-                    "[red]Import stopped after a write failure. Some earlier changes "
-                    "were already applied; review the plan before retrying.[/red]"
-                )
-            elif preflight_errors:
-                console.print("[red]Preflight failed; no modem changes were attempted.[/red]")
-            raise typer.Exit(code=1)
-    finally:
-        api.close()
-
-@devices_app.command("set")
-def devices_set(
-    mac: str = typer.Argument(..., help="Client MAC address."),
-    name: str = typer.Argument(..., help="Friendly name to assign."),
-    ip_address: Optional[str] = typer.Option(
-        None, "--ip",
-        help=(
-            "IPv4 to reserve (must be in the DHCP pool). Required only when "
-            "no reservation exists yet and the device's current IP can't be "
-            "discovered."
-        ),
-    ),
-    host: str = _host_opt(),
-    user: str = _user_opt(),
-    password: Optional[str] = _pwd_opt(),
-    insecure: bool = _insecure_opt(),
-):
-    """Assign a name to a device by MAC (edit reservation, or add one).
-
-    If a reservation already exists for the MAC, only its name (and IP if
-    ``--ip`` is given) is updated. Otherwise a new reservation is created;
-    the IP comes from ``--ip`` or, if omitted, from the device's currently
-    observed DHCP address.
-    """
-    key = _norm_mac(mac)
-    api = get_api(host, user, password, insecure)
-    try:
-        existing = next(
-            (b for b in (DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings())
-             if _norm_mac(b.mac) == key),
-            None,
-        )
-
-        if existing is not None:
-            ok, body = api.edit_dhcp_reservation(
-                existing.id, name=name, ip_address=ip_address,
-            )
-            action = "updated"
-            target_ip = ip_address or existing.ip_address
-        else:
-            target_ip = ip_address
-            if not target_ip:
-                # Discover the device's current IP from connected clients.
-                clients = (
-                    [Client.model_validate(r) for r in api.get_lan_clients()]
-                    + [Client.model_validate(r) for r in api.get_wifi_clients()]
-                )
-                match = next(
-                    (c for c in clients if _norm_mac(c.mac) == key and c.ipv4), None
-                )
-                target_ip = match.ipv4 if match else None
-            if not target_ip:
-                msg = (
-                    "no reservation for this MAC and could not discover its "
-                    "current IP; pass --ip <addr in DHCP pool>"
-                )
-                if state.json:
-                    _emit_json({"ok": False, "error": msg})
-                else:
-                    console.print(f"[red]{msg}[/red]")
-                raise typer.Exit(code=1)
-            ok, body = api.add_dhcp_reservation(
-                mac=mac, ip_address=target_ip, name=name,
-            )
-            action = "added"
-
-        if not ok:
-            if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
-            else:
-                console.print(
-                    f"[red]Set failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
-                )
-            raise typer.Exit(code=1)
-
-        if state.json:
-            _emit_json({
-                "ok": True, "action": action,
-                "mac": mac, "ip": target_ip, "name": name,
-            })
-        else:
-            console.print(
-                f"[green]{action.capitalize()}[/green] reservation "
-                f"([cyan]{name}[/cyan]) → {target_ip}"
-            )
-            console.print(f"  MAC: {mac}", markup=False, emoji=False)
-    finally:
-        api.close()
-
-
-@devices_app.command("clear")
-def devices_clear(
-    mac: str = typer.Argument(..., help="Client MAC address."),
-    yes: bool = typer.Option(
-        False, "-y", "--yes", help="Skip the confirmation prompt.",
-    ),
-    host: str = _host_opt(),
-    user: str = _user_opt(),
-    password: Optional[str] = _pwd_opt(),
-    insecure: bool = _insecure_opt(),
-):
-    """Remove the DHCP reservation (and its name) for a device by MAC."""
-    key = _norm_mac(mac)
-    api = get_api(host, user, password, insecure)
-    try:
-        existing = next(
-            (b for b in (DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings())
-             if _norm_mac(b.mac) == key),
-            None,
-        )
-        if existing is None:
-            msg = f"no reservation found for MAC {mac!r}"
-            if state.json:
-                _emit_json({"ok": False, "error": msg})
-            else:
-                console.print(msg, style="red", markup=False, emoji=False)
-            raise typer.Exit(code=1)
-
-        if not yes and not state.json:
-            console.print(
-                f"About to delete [bold]{existing.id}[/bold]: "
-                f"([cyan]{existing.name or '-'}[/cyan]) → {existing.ip_address or '-'}"
-            )
-            console.print(f"  MAC: {existing.mac or mac}", markup=False, emoji=False)
-            if not typer.confirm("Proceed?"):
-                console.print("[yellow]Aborted.[/yellow]")
-                raise typer.Exit(code=1)
-
-        ok, body = api.del_dhcp_reservation(existing.id)
-        if not ok:
-            if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
-            else:
-                console.print(
-                    f"[red]Clear failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
-                )
-            raise typer.Exit(code=1)
-        if state.json:
-            _emit_json({"ok": True, "deleted": existing.id, "mac": mac})
-        else:
-            console.print(
-                f"[green]Cleared[/green] reservation [bold]{existing.id}[/bold]."
-            )
-    finally:
-        api.close()
-
-
-@devices_app.command("edit")
-def devices_edit(
-    host: str = _host_opt(),
-    user: str = _user_opt(),
-    password: Optional[str] = _pwd_opt(),
-    insecure: bool = _insecure_opt(),
-):
-    """Interactively name devices one by one (reservations, route A).
-
-    Walks the merged device list and prompts per device:
-    - press Enter to keep the current name,
-    - type a name to set/rename (creates a reservation using the device's
-      observed IP when none exists yet),
-    - type ``-`` to clear an existing reservation.
-
-    Nothing is written until you confirm the summary at the end.
-    """
-    if state.json:
-        console.print(
-            "[red]`devices edit` is interactive and does not support --json.[/red]"
-        )
-        raise typer.Exit(code=1)
-
-    api = get_api(host, user, password, insecure)
-    try:
-        clients = (
-            [Client.model_validate(r) for r in api.get_lan_clients()]
-            + [Client.model_validate(r) for r in api.get_wifi_clients()]
-        )
-        bindings = [DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings()]
-        rows = sorted(_merge_devices(clients, bindings), key=lambda r: r.get("ipv4") or "")
-
-        console.print("[bold]Interactive device naming[/bold] (route A: DHCP reservations)")
-        console.print(
-            "[dim]Enter = keep · type a name to set/rename · '-' = clear · "
-            "Ctrl-C = abort[/dim]\n"
-        )
-
-        # Each action: (kind, row, new_name) where kind in add/edit/clear.
-        actions: List[tuple] = []
-        for r in rows:
-            current = r["name"] or ""
-            online = "[green]online[/green]" if r["online"] else "[red]offline[/red]"
-            reserved = "reserved" if r["reserved"] else "no-reservation"
-            console.print(
-                f"[green]{r['ipv4'] or '-'}[/green]  "
-                f"name=[cyan]{current or '-'}[/cyan]  "
-                f"dhcp=[dim]{r['hostname'] or '-'}[/dim]  "
-                f"{online}  [dim]{reserved}[/dim]"
-            )
-            console.print(f"  MAC {r['mac'] or '-'}", markup=False, emoji=False)
-
-            ans = typer.prompt("  name", default=current, show_default=True).strip()
-
-            if ans == current:
-                continue  # unchanged
-            if ans == "-":
-                if r["reserved"]:
-                    actions.append(("clear", r, None))
-                else:
-                    console.print("  [dim](nothing to clear)[/dim]")
-                continue
-            if r["reserved"]:
-                actions.append(("edit", r, ans))
-            elif r["ipv4"]:
-                actions.append(("add", r, ans))
-            else:
-                console.print(
-                    "  [yellow]skip: no reservation and no observed IP "
-                    "(use `devices set MAC NAME --ip`).[/yellow]"
-                )
-
-        if not actions:
-            console.print("\n[dim]No changes.[/dim]")
-            return
-
-        table = Table(title="Pending changes")
-        table.add_column("Action")
-        table.add_column("Name", style="cyan")
-        table.add_column("IP", style="green")
-        table.add_column("MAC")
-        applied = 0
-        for index, (kind, r, new) in enumerate(actions):
-            if kind == "edit":
-                ok, body = api.edit_dhcp_reservation(r["reservation_id"], name=new)
-            elif kind == "add":
-                ok, body = api.add_dhcp_reservation(
-                    mac=r["mac"], ip_address=r["ipv4"], name=new,
-                )
-            else:
-                ok, body = api.del_dhcp_reservation(r["reservation_id"])
-            label = (new if new is not None else r["name"]) or "-"
-            if ok:
-                applied += 1
-                console.print(
-                    f"[green]{kind}[/green] [cyan]{label}[/cyan] → {r['ipv4'] or '-'}"
-                )
-                continue
-
-            remaining = len(actions) - index - 1
-            console.print(
-                f"[red]{kind} FAILED[/red] for {label}: [dim]{body[:200]}[/dim]"
-            )
-            console.print(
-                f"[red]Stopped after failure: applied={applied}, failed=1, "
-                f"skipped={remaining}. Earlier successful changes remain applied.[/red]"
-            )
-            raise typer.Exit(code=1)
-
-    finally:
-        api.close()
-
-
 # ---------------------------------------------------------------------- dhcp6
+
 
 @app.command()
 def dhcp6(
@@ -2075,11 +1582,13 @@ def dhcp6(
         hosts = api.get_dhcp6_hosts()
 
         if state.json:
-            _emit_json({
-                "dhcp6_server": srv.model_dump(),
-                "ra": ra.model_dump(),
-                "hosts": hosts,
-            })
+            _emit_json(
+                {
+                    "dhcp6_server": srv.model_dump(),
+                    "ra": ra.model_dump(),
+                    "hosts": hosts,
+                }
+            )
             return
 
         srv_table = Table(title="DHCPv6 server")
@@ -2116,7 +1625,8 @@ def dhcp6(
         ra_table.add_row(
             "RA interval",
             f"{ra.min_interval}..{ra.max_interval}s"
-            if ra.min_interval is not None and ra.max_interval is not None else "-",
+            if ra.min_interval is not None and ra.max_interval is not None
+            else "-",
         )
         if ra.adv_mtu_enabled:
             ra_table.add_row("Advertised MTU", str(ra.adv_mtu) if ra.adv_mtu else "-")
@@ -2131,6 +1641,7 @@ def dhcp6(
 
 
 # ----------------------------------------------------------------------- voip
+
 
 def _voip_status_style(status: Optional[str]) -> str:
     if not status:
@@ -2180,26 +1691,34 @@ def voip(
         status = api.get_voip_status()
         bindings = api.get_voip_bindings()
 
-        lines = [VoipLine.model_validate(r) for r in status.get("OBJ_VOIPVPLINE_ID", [])]
-        sips = [VoipSipLine.model_validate(r) for r in status.get("OBJ_VOIPSIPLINE_ID", [])]
-        bind_lines = [VoipLine.model_validate(r) for r in bindings.get("OBJ_VOIPVPLINE_ID", [])]
+        lines = [
+            VoipLine.model_validate(r) for r in status.get("OBJ_VOIPVPLINE_ID", [])
+        ]
+        sips = [
+            VoipSipLine.model_validate(r) for r in status.get("OBJ_VOIPSIPLINE_ID", [])
+        ]
+        bind_lines = [
+            VoipLine.model_validate(r) for r in bindings.get("OBJ_VOIPVPLINE_ID", [])
+        ]
 
         # Index PhyList by virtual-line id (the bindings response uses _InstID,
         # not _OBJ_InstID, so VoipLine.id_alt is the join key here).
         phy_by_id = {b.id_alt: b.phy_list for b in bind_lines if b.id_alt}
 
         if state.json:
-            _emit_json({
-                "lines": [
-                    {
-                        **line.model_dump(),
-                        "phy_list": phy_by_id.get(line.id_alt or line.id),
-                    }
-                    for line in lines
-                ],
-                "sip_lines": [s.model_dump() for s in sips],
-                "bindings": bindings,
-            })
+            _emit_json(
+                {
+                    "lines": [
+                        {
+                            **line.model_dump(),
+                            "phy_list": phy_by_id.get(line.id_alt or line.id),
+                        }
+                        for line in lines
+                    ],
+                    "sip_lines": [s.model_dump() for s in sips],
+                    "bindings": bindings,
+                }
+            )
             return
 
         # Join SIP line to its parent VL via id prefix (foo.VL1.LS -> foo.VL1).
@@ -2232,6 +1751,7 @@ def voip(
 
 # ----------------------------------------------------------------------- upnp
 
+
 @app.command()
 def upnp(
     host: str = _host_opt(),
@@ -2246,10 +1766,12 @@ def upnp(
         maps = [UpnpPortMapping.model_validate(r) for r in api.get_upnp_portmappings()]
 
         if state.json:
-            _emit_json({
-                "config": cfg.model_dump(),
-                "port_mappings": [m.model_dump() for m in maps],
-            })
+            _emit_json(
+                {
+                    "config": cfg.model_dump(),
+                    "port_mappings": [m.model_dump() for m in maps],
+                }
+            )
             return
 
         cfg_table = Table(title="UPnP IGD")
@@ -2274,8 +1796,10 @@ def upnp(
         maps_table.add_column("LAN port", style="magenta")
         maps_table.add_column("Lease", style="dim")
         for m in maps:
-            lease = "perm" if m.lease_duration == 0 else (
-                f"{m.lease_duration}s" if m.lease_duration is not None else "-"
+            lease = (
+                "perm"
+                if m.lease_duration == 0
+                else (f"{m.lease_duration}s" if m.lease_duration is not None else "-")
             )
             maps_table.add_row(
                 _onoff(m.enabled),
@@ -2292,6 +1816,7 @@ def upnp(
 
 
 # ------------------------------------------------------------------------ dms
+
 
 @app.command()
 def dms(
@@ -2327,6 +1852,7 @@ def dms(
 
 # ------------------------------------------------------------------------ ftp
 
+
 @app.command()
 def ftp(
     host: str = _host_opt(),
@@ -2344,10 +1870,12 @@ def ftp(
         users = [FtpUser.model_validate(r) for r in user_rows]
 
         if state.json:
-            _emit_json({
-                "config": cfg.model_dump(),
-                "users": [u.model_dump() for u in users],
-            })
+            _emit_json(
+                {
+                    "config": cfg.model_dump(),
+                    "users": [u.model_dump() for u in users],
+                }
+            )
             return
 
         cfg_table = Table(title="FTP server")
@@ -2367,6 +1895,7 @@ def ftp(
 
 
 # ------------------------------------------------------------------- nanocdn
+
 
 @app.command()
 def nanocdn(
@@ -2399,7 +1928,8 @@ def nanocdn(
         table.add_row(
             "Status",
             ("[green]running[/green]" if n.status == 1 else f"raw={n.status}")
-            if n.status is not None else "-",
+            if n.status is not None
+            else "-",
         )
         table.add_row(
             "Sessions (now / min / max)",
@@ -2421,6 +1951,7 @@ def nanocdn(
 
 
 # ----------------------------------------------------------- wifi-advanced
+
 
 @app.command("wifi-advanced")
 def wifi_advanced(
@@ -2448,7 +1979,8 @@ def wifi_advanced(
         table.add_column("Standard", style="dim")
         for r in radios:
             ch = (
-                f"{r.channel} ([dim]auto[/dim])" if r.auto_channel and r.channel is not None
+                f"{r.channel} ([dim]auto[/dim])"
+                if r.auto_channel and r.channel is not None
                 else (str(r.channel) if r.channel is not None else "-")
             )
             table.add_row(
@@ -2467,6 +1999,7 @@ def wifi_advanced(
 
 # ------------------------------------------------------------------ wifi-acl
 
+
 @app.command("wifi-acl")
 def wifi_acl(
     host: str = _host_opt(),
@@ -2478,14 +2011,18 @@ def wifi_acl(
     api = get_api(host, user, password, insecure)
     try:
         data = api.get_wifi_mac_filter()
-        policies = [WifiAclPolicy.model_validate(r) for r in data.get("OBJ_WLANACL_ID", [])]
+        policies = [
+            WifiAclPolicy.model_validate(r) for r in data.get("OBJ_WLANACL_ID", [])
+        ]
         rules = [WifiAclRule.model_validate(r) for r in data.get("OBJ_ACLCFG_ID", [])]
 
         if state.json:
-            _emit_json({
-                "policies": [p.model_dump() for p in policies],
-                "rules": [r.model_dump() for r in rules],
-            })
+            _emit_json(
+                {
+                    "policies": [p.model_dump() for p in policies],
+                    "rules": [r.model_dump() for r in rules],
+                }
+            )
             return
 
         pol_table = Table(title=f"MAC filter policy ({len(policies)})")
@@ -2574,7 +2111,9 @@ def wifi_schedule(
         table.add_column("Days", style="green")
         table.add_column("Action")
         for s in schedules:
-            action = _SCHEDULE_ACTION_LABEL.get(s.action, str(s.action) if s.action is not None else "-")
+            action = _SCHEDULE_ACTION_LABEL.get(
+                s.action, str(s.action) if s.action is not None else "-"
+            )
             table.add_row(
                 (s.id or "-").rsplit(".", 1)[-1],
                 _onoff(s.enabled),
@@ -2588,6 +2127,7 @@ def wifi_schedule(
 
 
 # ------------------------------------------------------------- band-steering
+
 
 @app.command("band-steering")
 def band_steering(
@@ -2606,10 +2146,12 @@ def band_steering(
         bs = BandSteeringState.model_validate(bs_rows[0] if bs_rows else {})
 
         if state.json:
-            _emit_json({
-                "easy_mesh": mesh.model_dump(),
-                "band_steering": bs.model_dump(),
-            })
+            _emit_json(
+                {
+                    "easy_mesh": mesh.model_dump(),
+                    "band_steering": bs.model_dump(),
+                }
+            )
             return
 
         table = Table(title="EasyMesh / band steering")
@@ -2623,6 +2165,7 @@ def band_steering(
 
 
 # ------------------------------------------------------------------ topology
+
 
 @app.command()
 def topology(
@@ -2654,17 +2197,19 @@ def topology(
         agents2 = _agents(layer2)
 
         if state.json:
-            _emit_json({
-                "controller": controller.model_dump() if controller else None,
-                "agentlay1": {
-                    "count": layer1.get("MGET_INST_NUM", 0),
-                    "agents": [a.model_dump() for a in agents1],
-                },
-                "agentlay2": {
-                    "count": layer2.get("MGET_INST_NUM", 0),
-                    "agents": [a.model_dump() for a in agents2],
-                },
-            })
+            _emit_json(
+                {
+                    "controller": controller.model_dump() if controller else None,
+                    "agentlay1": {
+                        "count": layer1.get("MGET_INST_NUM", 0),
+                        "agents": [a.model_dump() for a in agents1],
+                    },
+                    "agentlay2": {
+                        "count": layer2.get("MGET_INST_NUM", 0),
+                        "agents": [a.model_dump() for a in agents2],
+                    },
+                }
+            )
             return
 
         if controller:
@@ -2758,6 +2303,7 @@ _RTP_PT_NAME = {
 
 # ---------------------------------------------------------------- voip-media
 
+
 @app.command("voip-media")
 def voip_media(
     host: str = _host_opt(),
@@ -2771,10 +2317,12 @@ def voip_media(
         data = api.get_voip_media()
         codecs = data.get("OBJ_VOIPLINEVMEDAI_ID", [])
         if state.json:
-            _emit_json({
-                "lines": data.get("OBJ_VOIPVPLINE_ID", []),
-                "codecs": codecs,
-            })
+            _emit_json(
+                {
+                    "lines": data.get("OBJ_VOIPVPLINE_ID", []),
+                    "codecs": codecs,
+                }
+            )
             return
         if not codecs:
             console.print("[yellow]No VoIP media data returned.[/yellow]")
@@ -2806,7 +2354,8 @@ def voip_media(
             except (TypeError, ValueError):
                 enabled = None
             table.add_row(
-                line, slot,
+                line,
+                slot,
                 c.get("MediaVPri", "-"),
                 _onoff(enabled),
                 pt or "-",
@@ -2820,6 +2369,7 @@ def voip_media(
 
 
 # ------------------------------------------------------------------ voip-pos
+
 
 @app.command("voip-pos")
 def voip_pos(
@@ -2854,6 +2404,7 @@ def voip_pos(
 
 # ------------------------------------------------------------------- usb-devs
 
+
 @app.command("usb-devs")
 def usb_devs(
     host: str = _host_opt(),
@@ -2869,7 +2420,8 @@ def usb_devs(
             _emit_json(rows)
             return
         _render_generic_rows(
-            "USB storage devices", rows,
+            "USB storage devices",
+            rows,
             "No USB storage device attached.",
         )
     finally:
@@ -2877,6 +2429,7 @@ def usb_devs(
 
 
 # ----------------------------------------------------------- wifi-ssid-config
+
 
 @app.command("wifi-ssid-config")
 def wifi_ssid_config(
@@ -2928,6 +2481,7 @@ def wifi_ssid_config(
 
 
 # ----------------------------------------------------------------------- sntp
+
 
 @app.command("sntp")
 def sntp(
@@ -2986,6 +2540,7 @@ def sntp(
 
 # --------------------------------------------------------------------- edns0
 
+
 @app.command("edns0")
 def edns0(
     host: str = _host_opt(),
@@ -3020,6 +2575,7 @@ def edns0(
 
 # --------------------------------------------------------------- ipv6-prefix
 
+
 @app.command("ipv6-prefix")
 def ipv6_prefix(
     host: str = _host_opt(),
@@ -3035,11 +2591,13 @@ def ipv6_prefix(
             _emit_json(data)
             return
         _render_generic_rows(
-            "IPv6 prefix pool (DHCPv6-PD)", data.get("pool", []),
+            "IPv6 prefix pool (DHCPv6-PD)",
+            data.get("pool", []),
             "No delegated IPv6 prefix from the ISP.",
         )
         _render_generic_rows(
-            "IPv6 static prefixes", data.get("static", []),
+            "IPv6 static prefixes",
+            data.get("static", []),
             "No static IPv6 prefix configured.",
         )
     finally:
@@ -3047,6 +2605,7 @@ def ipv6_prefix(
 
 
 # ------------------------------------------------------------ firewall-ipfilter
+
 
 @app.command("firewall-ipfilter")
 def firewall_ipfilter(
@@ -3063,11 +2622,13 @@ def firewall_ipfilter(
             _emit_json(data)
             return
         _render_generic_rows(
-            "IP filter rules", data.get("rules", []),
+            "IP filter rules",
+            data.get("rules", []),
             "No IP-filter rules configured.",
         )
         _render_generic_rows(
-            "IP filter priority", data.get("priority", []),
+            "IP filter priority",
+            data.get("priority", []),
             "No IP-filter priority entry.",
         )
     finally:
@@ -3075,6 +2636,7 @@ def firewall_ipfilter(
 
 
 # ----------------------------------------------------------- firewall-urlfilter
+
 
 @app.command("firewall-urlfilter")
 def firewall_urlfilter(
@@ -3091,7 +2653,8 @@ def firewall_urlfilter(
             _emit_json(rows)
             return
         _render_generic_rows(
-            "URL filter rules", rows,
+            "URL filter rules",
+            rows,
             "No URL-filter rules configured.",
         )
     finally:
@@ -3177,7 +2740,9 @@ def firewall_urlfilter_del(
             if state.json:
                 _emit_json({"ok": False, "error": f"rule {inst_id!r} not found"})
             else:
-                console.print(f"[red]No URL filter with id[/red] [bold]{inst_id}[/bold].")
+                console.print(
+                    f"[red]No URL filter with id[/red] [bold]{inst_id}[/bold]."
+                )
             raise typer.Exit(code=1)
 
         if not yes and not state.json:
@@ -3217,7 +2782,8 @@ def firewall_ipfilter_add(
         ..., help="ICMP | TCP | UDP (case-insensitive) or a raw 1–255 number."
     ),
     target: str = typer.Option(
-        "allow", "--target",
+        "allow",
+        "--target",
         help="allow (default, never blocks traffic) or deny.",
     ),
     index: int = typer.Option(
@@ -3227,15 +2793,23 @@ def firewall_ipfilter_add(
         False, "--disable", help="Create the rule disabled (defaults to enabled)."
     ),
     ip_version: str = typer.Option(
-        "4", "--ip-version", help="IP version: 4, 6, or -1 (any).",
+        "4",
+        "--ip-version",
+        help="IP version: 4, 6, or -1 (any).",
     ),
     src_ip: str = typer.Option("", "--src-ip", help="Source IP (empty = any)."),
     src_mask: str = typer.Option("", "--src-mask", help="Source IP mask/prefix."),
     dst_ip: str = typer.Option("", "--dst-ip", help="Destination IP (empty = any)."),
     dst_mask: str = typer.Option("", "--dst-mask", help="Destination IP mask/prefix."),
-    src_port_min: str = typer.Option("", "--src-port-min", help="Source port range start."),
-    src_port_max: str = typer.Option("", "--src-port-max", help="Source port range end."),
-    dst_port_min: str = typer.Option("", "--dst-port-min", help="Dest port range start."),
+    src_port_min: str = typer.Option(
+        "", "--src-port-min", help="Source port range start."
+    ),
+    src_port_max: str = typer.Option(
+        "", "--src-port-max", help="Source port range end."
+    ),
+    dst_port_min: str = typer.Option(
+        "", "--dst-port-min", help="Dest port range start."
+    ),
     dst_port_max: str = typer.Option("", "--dst-port-max", help="Dest port range end."),
     dscp: str = typer.Option("", "--dscp", help="DSCP value (0–63)."),
     host: str = _host_opt(),
@@ -3247,12 +2821,20 @@ def firewall_ipfilter_add(
     api = get_api(host, user, password, insecure)
     try:
         ok, body = api.add_ip_filter_rule(
-            name=name, protocol=protocol, target=target,
-            filter_index=index, enable=not disable, ip_version=ip_version,
-            source_ip=src_ip, source_mask=src_mask,
-            dest_ip=dst_ip, dest_mask=dst_mask,
-            min_src_port=src_port_min, max_src_port=src_port_max,
-            min_dst_port=dst_port_min, max_dst_port=dst_port_max,
+            name=name,
+            protocol=protocol,
+            target=target,
+            filter_index=index,
+            enable=not disable,
+            ip_version=ip_version,
+            source_ip=src_ip,
+            source_mask=src_mask,
+            dest_ip=dst_ip,
+            dest_mask=dst_mask,
+            min_src_port=src_port_min,
+            max_src_port=src_port_max,
+            min_dst_port=dst_port_min,
+            max_dst_port=dst_port_max,
             dscp=dscp,
         )
         if not ok:
@@ -3318,7 +2900,9 @@ def firewall_ipfilter_del(
             if state.json:
                 _emit_json({"ok": False, "error": f"rule {inst_id!r} not found"})
             else:
-                console.print(f"[red]No IP filter with id[/red] [bold]{inst_id}[/bold].")
+                console.print(
+                    f"[red]No IP filter with id[/red] [bold]{inst_id}[/bold]."
+                )
             raise typer.Exit(code=1)
 
         if not yes and not state.json:
@@ -3358,7 +2942,8 @@ def firewall_ipfilter_toggle(
         ),
     ),
     enable: Optional[bool] = typer.Option(
-        None, "--on/--off",
+        None,
+        "--on/--off",
         help="Force enabled (--on) or disabled (--off). Default: flip current.",
     ),
     host: str = _host_opt(),
@@ -3380,14 +2965,23 @@ def firewall_ipfilter_toggle(
             if state.json:
                 _emit_json({"ok": False, "error": f"rule {inst_id!r} not found"})
             else:
-                console.print(f"[red]No IP filter with id[/red] [bold]{inst_id}[/bold].")
+                console.print(
+                    f"[red]No IP filter with id[/red] [bold]{inst_id}[/bold]."
+                )
             raise typer.Exit(code=1)
 
         currently_on = target.get("Enable") == "1"
         new_state = (not currently_on) if enable is None else enable
         if new_state == currently_on:
             if state.json:
-                _emit_json({"ok": True, "id": inst_id, "enabled": currently_on, "changed": False})
+                _emit_json(
+                    {
+                        "ok": True,
+                        "id": inst_id,
+                        "enabled": currently_on,
+                        "changed": False,
+                    }
+                )
             else:
                 console.print(
                     f"[yellow]Rule [bold]{inst_id}[/bold] already "
@@ -3405,7 +2999,9 @@ def firewall_ipfilter_toggle(
                 )
             raise typer.Exit(code=1)
         if state.json:
-            _emit_json({"ok": True, "id": inst_id, "enabled": new_state, "changed": True})
+            _emit_json(
+                {"ok": True, "id": inst_id, "enabled": new_state, "changed": True}
+            )
         else:
             console.print(
                 f"[green]{'Enabled' if new_state else 'Disabled'}[/green] "
@@ -3416,6 +3012,7 @@ def firewall_ipfilter_toggle(
 
 
 # ------------------------------------------------------------- parental-control
+
 
 @app.command("parental-control")
 def parental_control(
@@ -3432,7 +3029,8 @@ def parental_control(
             _emit_json(rows)
             return
         _render_generic_rows(
-            "Parental control entries", rows,
+            "Parental control entries",
+            rows,
             "No parental-control entries configured.",
         )
     finally:
@@ -3440,6 +3038,7 @@ def parental_control(
 
 
 # --------------------------------------------------------------- dsl-interface
+
 
 @app.command("dsl-interface")
 def dsl_interface(
@@ -3485,24 +3084,41 @@ def dsl_interface(
         def s(v):
             return str(v) if v is not None else "-"
 
-        rates.add_row("Current rate (kbps)",
-                      s(dsl.downstream_current_rate), s(dsl.upstream_current_rate))
-        rates.add_row("Max rate (kbps)",
-                      s(dsl.downstream_max_rate), s(dsl.upstream_max_rate))
-        rates.add_row("Noise margin (× 0.1 dB)",
-                      s(dsl.downstream_noise_margin), s(dsl.upstream_noise_margin))
-        rates.add_row("Attenuation (× 0.1 dB)",
-                      s(dsl.downstream_attenuation), s(dsl.upstream_attenuation))
-        rates.add_row("Power (× 0.1 dBm)",
-                      s(dsl.downstream_power), s(dsl.upstream_power))
-        rates.add_row("INP",
-                      s(dsl.downstream_inp), s(dsl.upstream_inp))
-        rates.add_row("Interleave delay (ms)",
-                      s(dsl.downstream_interleave_delay), s(dsl.upstream_interleave_delay))
-        rates.add_row("Interleave depth",
-                      s(dsl.downstream_interleave_depth), s(dsl.upstream_interleave_depth))
-        rates.add_row("CRC errors",
-                      s(dsl.downstream_crc_errors), s(dsl.upstream_crc_errors))
+        rates.add_row(
+            "Current rate (kbps)",
+            s(dsl.downstream_current_rate),
+            s(dsl.upstream_current_rate),
+        )
+        rates.add_row(
+            "Max rate (kbps)", s(dsl.downstream_max_rate), s(dsl.upstream_max_rate)
+        )
+        rates.add_row(
+            "Noise margin (× 0.1 dB)",
+            s(dsl.downstream_noise_margin),
+            s(dsl.upstream_noise_margin),
+        )
+        rates.add_row(
+            "Attenuation (× 0.1 dB)",
+            s(dsl.downstream_attenuation),
+            s(dsl.upstream_attenuation),
+        )
+        rates.add_row(
+            "Power (× 0.1 dBm)", s(dsl.downstream_power), s(dsl.upstream_power)
+        )
+        rates.add_row("INP", s(dsl.downstream_inp), s(dsl.upstream_inp))
+        rates.add_row(
+            "Interleave delay (ms)",
+            s(dsl.downstream_interleave_delay),
+            s(dsl.upstream_interleave_delay),
+        )
+        rates.add_row(
+            "Interleave depth",
+            s(dsl.downstream_interleave_depth),
+            s(dsl.upstream_interleave_depth),
+        )
+        rates.add_row(
+            "CRC errors", s(dsl.downstream_crc_errors), s(dsl.upstream_crc_errors)
+        )
         console.print(rates)
 
         errs = Table(title="DSL FEC errors")
@@ -3516,6 +3132,7 @@ def dsl_interface(
 
 
 # --------------------------------------------------------------- admin-users
+
 
 @app.command("admin-users")
 def admin_users(
@@ -3546,6 +3163,7 @@ def admin_users(
 
 
 # ----------------------------------------------------------- web-login-timeout
+
 
 @app.command("web-timeout")
 def web_timeout(
@@ -3613,6 +3231,7 @@ def web_timeout(
 
 # ------------------------------------------------------------------ mobile-wan
 
+
 @app.command("mobile-wan")
 def mobile_wan(
     host: str = _host_opt(),
@@ -3629,10 +3248,12 @@ def mobile_wan(
         info = MobileWanInfo.model_validate(info_raw) if info_raw else None
 
         if state.json:
-            _emit_json({
-                "dongle": dongle,
-                "info": info.model_dump() if info else {},
-            })
+            _emit_json(
+                {
+                    "dongle": dongle,
+                    "info": info.model_dump() if info else {},
+                }
+            )
             return
 
         table = Table(title="Mobile WAN dongle")
@@ -3649,15 +3270,14 @@ def mobile_wan(
             )
             table.add_row("IMEI", info.imei or "-")
             table.add_row("Network mode", info.network_mode or "-")
-            table.add_row(
-                "Alarm", str(info.alarm) if info.alarm is not None else "-"
-            )
+            table.add_row("Alarm", str(info.alarm) if info.alarm is not None else "-")
         console.print(table)
     finally:
         api.close()
 
 
 # ----------------------------------------------------------------- public-lan
+
 
 @app.command("public-lan")
 def public_lan(
@@ -3703,6 +3323,7 @@ def _health_row(status: str, area: str, detail: str):
 
 # --------------------------------------------------------------------- health
 
+
 @app.command()
 def health(
     host: str = _host_opt(),
@@ -3722,13 +3343,17 @@ def health(
         except Exception:
             d = None
         if d:
-            rows.append(_health_row(
-                "ok", "Modem",
-                f"{d.model or '?'} · {d.software_version or '?'} · SN {d.serial_number or '?'}",
-            ))
+            rows.append(
+                _health_row(
+                    "ok",
+                    "Modem",
+                    f"{d.model or '?'} · {d.software_version or '?'} · SN {d.serial_number or '?'}",
+                )
+            )
             summary["modem"] = {
                 "status": "ok",
-                "model": d.model, "software": d.software_version,
+                "model": d.model,
+                "software": d.software_version,
                 "serial": d.serial_number,
             }
         else:
@@ -3742,11 +3367,14 @@ def health(
         except Exception:
             s = None
         if s and (s.status or "").lower() == "up":
-            rows.append(_health_row(
-                "ok", "DSL",
-                f"{s.module_type or 'DSL'} {s.profile or ''} · "
-                f"↓{s.downstream_curr_rate or 0}/↑{s.upstream_curr_rate or 0} kbps",
-            ))
+            rows.append(
+                _health_row(
+                    "ok",
+                    "DSL",
+                    f"{s.module_type or 'DSL'} {s.profile or ''} · "
+                    f"↓{s.downstream_curr_rate or 0}/↑{s.upstream_curr_rate or 0} kbps",
+                )
+            )
             summary["dsl"] = {
                 "status": "ok",
                 "line_status": s.status,
@@ -3754,9 +3382,9 @@ def health(
                 "upstream_kbps": s.upstream_curr_rate,
             }
         elif s:
-            rows.append(_health_row(
-                "fail", "DSL", f"line status: {s.status or 'unknown'}"
-            ))
+            rows.append(
+                _health_row("fail", "DSL", f"line status: {s.status or 'unknown'}")
+            )
             summary["dsl"] = {"status": "fail", "line_status": s.status}
         else:
             rows.append(_health_row("warn", "DSL", "no data"))
@@ -3771,11 +3399,14 @@ def health(
         connected = [w for w in wan_list if (w.status or "").lower() == "connected"]
         if connected:
             for w in connected:
-                rows.append(_health_row(
-                    "ok", f"WAN/{w.name or '?'}",
-                    f"{w.ip_address or '-'} via {w.gateway or '-'} · "
-                    f"up {w.uptime_seconds if w.uptime_seconds is not None else '?'}s",
-                ))
+                rows.append(
+                    _health_row(
+                        "ok",
+                        f"WAN/{w.name or '?'}",
+                        f"{w.ip_address or '-'} via {w.gateway or '-'} · "
+                        f"up {w.uptime_seconds if w.uptime_seconds is not None else '?'}s",
+                    )
+                )
             summary["wan"] = {
                 "status": "ok",
                 "connected": [w.model_dump() for w in connected],
@@ -3802,17 +3433,22 @@ def health(
             status = "ok" if registered else "warn"
             label = sl.phone_name or (sl.id or "SIP?")
             number = sl.auth_username or "-"
-            rows.append(_health_row(
-                status, f"VoIP/{label}",
-                f"{number} · {state_label or 'unknown'}",
-            ))
-            voip_summary.append({
-                "id": sl.id,
-                "phone_name": sl.phone_name,
-                "number": sl.auth_username,
-                "is_online": sl.is_online,
-                "status": status,
-            })
+            rows.append(
+                _health_row(
+                    status,
+                    f"VoIP/{label}",
+                    f"{number} · {state_label or 'unknown'}",
+                )
+            )
+            voip_summary.append(
+                {
+                    "id": sl.id,
+                    "phone_name": sl.phone_name,
+                    "number": sl.auth_username,
+                    "is_online": sl.is_online,
+                    "status": status,
+                }
+            )
         summary["voip"] = voip_summary
 
         # --- Mesh / controller ---------------------------------------------
@@ -3825,12 +3461,14 @@ def health(
         layer2 = (topo or {}).get("agentlay2") or {}
         agents = (layer1.get("MGET_INST_NUM") or 0) + (layer2.get("MGET_INST_NUM") or 0)
         if ctrl:
-            rows.append(_health_row(
-                "info" if agents == 0 else "ok",
-                "Mesh",
-                f"controller {ctrl.get('DeviceName', '?')} · "
-                f"{ctrl.get('accdevCount', 0)} clients · {agents} agents",
-            ))
+            rows.append(
+                _health_row(
+                    "info" if agents == 0 else "ok",
+                    "Mesh",
+                    f"controller {ctrl.get('DeviceName', '?')} · "
+                    f"{ctrl.get('accdevCount', 0)} clients · {agents} agents",
+                )
+            )
             summary["mesh"] = {
                 "controller": ctrl.get("DeviceName"),
                 "associated_devices": ctrl.get("accdevCount"),
@@ -3856,6 +3494,7 @@ def health(
 
 
 # ---------------------------------------------------------------------- watch
+
 
 @app.command(
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
@@ -3910,7 +3549,9 @@ def watch(
     except KeyboardInterrupt:
         return
 
+
 # --------------------------------------------------------------------- logout
+
 
 @app.command()
 def logout(
@@ -3935,10 +3576,12 @@ def logout(
         if not api.has_cached_session:
             if not resolved_password:
                 if state.json:
-                    _emit_json({
-                        "logout": "failed",
-                        "error": "no cached session and no password available",
-                    })
+                    _emit_json(
+                        {
+                            "logout": "failed",
+                            "error": "no cached session and no password available",
+                        }
+                    )
                 else:
                     console.print(
                         "[red]No cached session and no password available.[/red]"
@@ -3970,7 +3613,9 @@ def logout(
         except Exception:
             pass
 
+
 # --------------------------------------------------------------------- reboot
+
 
 @app.command()
 def reboot(
@@ -4072,6 +3717,7 @@ def config_backup(
 
 # --------------------------------------------------------- network diagnostics
 
+
 @app.command()
 def ping(
     host: str = typer.Argument(..., help="Target host or IP to ping."),
@@ -4113,7 +3759,9 @@ def traceroute(
     timeout_ms: int = typer.Option(
         5000, "--timeout", help="Per-probe timeout in milliseconds."
     ),
-    protocol: str = typer.Option("UDP", "--protocol", help="Probe protocol (UDP/ICMP)."),
+    protocol: str = typer.Option(
+        "UDP", "--protocol", help="Probe protocol (UDP/ICMP)."
+    ),
     host_opt: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
@@ -4124,14 +3772,20 @@ def traceroute(
     try:
         if state.json:
             ok, result = api.traceroute(
-                host, max_hops=max_hops,
-                timeout_ms=timeout_ms, protocol=protocol,
+                host,
+                max_hops=max_hops,
+                timeout_ms=timeout_ms,
+                protocol=protocol,
             )
         else:
-            with console.status(f"[bold green]Tracing route to {host} from the modem..."):
+            with console.status(
+                f"[bold green]Tracing route to {host} from the modem..."
+            ):
                 ok, result = api.traceroute(
-                    host, max_hops=max_hops,
-                    timeout_ms=timeout_ms, protocol=protocol,
+                    host,
+                    max_hops=max_hops,
+                    timeout_ms=timeout_ms,
+                    protocol=protocol,
                 )
     finally:
         api.close()
@@ -4148,6 +3802,7 @@ def traceroute(
 
 
 # -------------------------------------------------------------- capabilities
+
 
 @app.command()
 def capabilities(
@@ -4220,8 +3875,12 @@ def capabilities(
         table.add_row("Catalog entries", str(payload["coverage"]["total"]))
         if payload["discovery"] is not None:
             stats = payload["discovery"]["stats"]
-            table.add_row("Discovery endpoints", str(stats.get("endpoint_count", "N/A")))
-            table.add_row("Discovery with data", str(stats.get("endpoints_with_data", "N/A")))
+            table.add_row(
+                "Discovery endpoints", str(stats.get("endpoint_count", "N/A"))
+            )
+            table.add_row(
+                "Discovery with data", str(stats.get("endpoints_with_data", "N/A"))
+            )
         console.print(table)
 
         status_table = Table(title="Coverage by status")
@@ -4230,10 +3889,7 @@ def capabilities(
         for status, count in payload["coverage"]["by_status"].items():
             status_table.add_row(status, str(count))
         console.print(status_table)
-        gaps = [
-            item for item in payload["capabilities"]
-            if item["status"] != "covered"
-        ]
+        gaps = [item for item in payload["capabilities"] if item["status"] != "covered"]
         if gaps:
             gap_table = Table(title="Open gaps")
             gap_table.add_column("Capability", style="cyan")
@@ -4247,6 +3903,7 @@ def capabilities(
 
 
 # ------------------------------------------------------------------- discover
+
 
 @app.command()
 def discover(
@@ -4318,11 +3975,13 @@ def discover(
                 "[bold green]Spidering modem web UI...",
                 spinner="dots",
             ) as status:
+
                 def cb_console(msg: str, done: int, total: int) -> None:
                     status.update(
                         f"[bold green]Spidering modem web UI[/bold green]  "
                         f"[dim]({done}/{total})[/dim]  {msg}"
                     )
+
                 spider = Spider(
                     api,
                     max_requests=max_requests,
@@ -4371,11 +4030,13 @@ def discover(
             raise typer.Exit(code=1)
 
         if state.json:
-            _emit_json({
-                "output": output,
-                "stats": result["stats"],
-                "comparison": result["comparison"],
-            })
+            _emit_json(
+                {
+                    "output": output,
+                    "stats": result["stats"],
+                    "comparison": result["comparison"],
+                }
+            )
             return
 
         s = result["stats"]
