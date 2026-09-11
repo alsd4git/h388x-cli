@@ -9,6 +9,15 @@ from pathlib import Path
 from typing import Optional, Dict, Any, List, Tuple
 
 import requests
+from pydantic import ValidationError
+
+from .validation import (
+    DhcpReservationSpec,
+    IpFilterSpec,
+    PortForwardSpec,
+    UrlFilterSpec,
+    validation_error_message,
+)
 
 
 def _default_cache_dir() -> Path:
@@ -761,36 +770,34 @@ class ZTEH388XAPI:
         remote_host_end: str = "0.0.0.0",
         enable: bool = True,
     ) -> Tuple[bool, str]:
-        """Create a new port-forwarding rule.
-
-        Despite the name, the WebUI submits new instances with the same
-        ``IF_ACTION=Apply`` that edits existing ones, distinguished only
-        by ``_OBJ_InstID=-1`` (the magic "new" marker rendered as
-        ``<input id='OBJ_FWPM_ID._OBJ_InstID' value='-1'>`` in the
-        ``portForwardingMenu`` view). The server then assigns the real
-        ``DEV.NAT.PtMapping<N>`` id.
-
-        ``protocol`` must be one of ``TCP``, ``UDP``, ``BOTH``.
-        ``internal_port`` defaults to ``external_port`` (single-port
-        mapping) and ``external_port_end`` defaults to ``external_port``
-        as well. ``remote_host`` ``0.0.0.0`` means "any source".
-        """
-        proto = protocol.upper()
-        if proto not in {"TCP", "UDP", "BOTH"}:
-            return False, f"protocol must be TCP/UDP/BOTH (got {protocol!r})"
+        """Create a new port-forwarding rule after local validation."""
         ext_end = external_port_end if external_port_end is not None else external_port
         int_port = internal_port if internal_port is not None else external_port
+        try:
+            spec = PortForwardSpec(
+                description=description,
+                protocol=protocol,
+                external_port=external_port,
+                external_port_end=ext_end,
+                internal_client=internal_client,
+                internal_port=int_port,
+                remote_host=remote_host,
+                remote_host_end=remote_host_end,
+            )
+        except ValidationError as exc:
+            return False, f"validation error: {validation_error_message(exc)}"
+
         fields = self._prefixed(self._PFWD_PREFIX, {
             "_OBJ_InstID": "-1",
             "Enable": "1" if enable else "0",
-            "Description": description,
-            "Protocol": proto,
-            "ExternalPort": str(external_port),
-            "ExternalPortEndRange": str(ext_end),
-            "InternalClient": internal_client,
-            "InternalPort": str(int_port),
-            "RemoteHost": remote_host,
-            "RemoteHostEndRange": remote_host_end,
+            "Description": spec.description,
+            "Protocol": spec.protocol,
+            "ExternalPort": str(spec.external_port),
+            "ExternalPortEndRange": str(spec.external_port_end),
+            "InternalClient": spec.internal_client,
+            "InternalPort": str(spec.internal_port),
+            "RemoteHost": spec.remote_host,
+            "RemoteHostEndRange": spec.remote_host_end,
         })
         return self._post_action(
             self.PORT_FORWARDING_VIEW_URL,
@@ -839,14 +846,7 @@ class ZTEH388XAPI:
         remote_host_end: Optional[str] = None,
         enable: Optional[bool] = None,
     ) -> Tuple[bool, str]:
-        """Edit an existing port-forwarding rule (full ``IF_ACTION=Apply``
-        with the real ``_OBJ_InstID``).
-
-        Reads the current row first and only overrides the fields passed
-        as non-``None``; everything else is resubmitted unchanged, so a
-        partial edit never clobbers untouched fields. Returns
-        ``(False, msg)`` if the rule id is unknown or protocol invalid.
-        """
+        """Edit a port-forwarding rule after validating the final payload."""
         current = next(
             (r for r in self.get_port_forwarding_rules()
              if r.get("_OBJ_InstID") == inst_id),
@@ -855,36 +855,50 @@ class ZTEH388XAPI:
         if current is None:
             return False, f"rule {inst_id!r} not found"
 
-        if protocol is not None:
-            proto = protocol.upper()
-            if proto not in {"TCP", "UDP", "BOTH"}:
-                return False, f"protocol must be TCP/UDP/BOTH (got {protocol!r})"
-        else:
-            proto = current.get("Protocol", "TCP")
-
-        def _pick(new: object, key: str) -> str:
+        def pick(new: object, key: str) -> str:
             return str(new) if new is not None else current.get(key, "")
 
-        if enable is None:
-            enable_val = current.get("Enable", "1")
+        current_external_port = current.get("ExternalPort", "")
+        current_external_end = current.get("ExternalPortEndRange", "")
+        if external_port_end is not None:
+            target_external_end = external_port_end
+        elif external_port is not None and current_external_end == current_external_port:
+            target_external_end = external_port
         else:
-            enable_val = "1" if enable else "0"
+            target_external_end = current_external_end
 
+        try:
+            spec = PortForwardSpec(
+                description=pick(description, "Description"),
+                protocol=pick(protocol, "Protocol"),
+                external_port=pick(external_port, "ExternalPort"),
+                external_port_end=target_external_end,
+                internal_client=pick(internal_client, "InternalClient"),
+                internal_port=pick(internal_port, "InternalPort"),
+                remote_host=pick(remote_host, "RemoteHost"),
+                remote_host_end=pick(remote_host_end, "RemoteHostEndRange"),
+            )
+        except ValidationError as exc:
+            return False, f"validation error: {validation_error_message(exc)}"
+
+        enable_val = current.get("Enable", "1") if enable is None else ("1" if enable else "0")
         fields = self._prefixed(self._PFWD_PREFIX, {
             "_OBJ_InstID": inst_id,
             "Enable": enable_val,
-            "Description": _pick(description, "Description"),
-            "Protocol": proto,
-            "ExternalPort": _pick(external_port, "ExternalPort"),
-            "ExternalPortEndRange": _pick(external_port_end, "ExternalPortEndRange"),
-            "InternalClient": _pick(internal_client, "InternalClient"),
-            "InternalPort": _pick(internal_port, "InternalPort"),
-            "RemoteHost": _pick(remote_host, "RemoteHost"),
-            "RemoteHostEndRange": _pick(remote_host_end, "RemoteHostEndRange"),
+            "Description": spec.description,
+            "Protocol": spec.protocol,
+            "ExternalPort": str(spec.external_port),
+            "ExternalPortEndRange": str(spec.external_port_end),
+            "InternalClient": spec.internal_client,
+            "InternalPort": str(spec.internal_port),
+            "RemoteHost": spec.remote_host,
+            "RemoteHostEndRange": spec.remote_host_end,
         })
         return self._post_action(
-            self.PORT_FORWARDING_VIEW_URL, self.PORT_FORWARDING_URL,
-            action="Apply", fields=fields,
+            self.PORT_FORWARDING_VIEW_URL,
+            self.PORT_FORWARDING_URL,
+            action="Apply",
+            fields=fields,
         )
 
     # --- DHCPv4 static reservations write actions ---
@@ -896,21 +910,22 @@ class ZTEH388XAPI:
     def add_dhcp_reservation(
         self, mac: str, ip_address: str, name: str
     ) -> Tuple[bool, str]:
-        """Create a static DHCPv4 lease (POST ``IF_ACTION=Apply`` +
-        ``_OBJ_InstID=-1``).
-
-        Active leases on other MACs are not disrupted; the modem only
-        enforces the binding at the next renewal of the target client.
-        """
+        """Create a static DHCPv4 reservation after local validation."""
+        try:
+            spec = DhcpReservationSpec(mac=mac, ip_address=ip_address, name=name)
+        except ValidationError as exc:
+            return False, f"validation error: {validation_error_message(exc)}"
         fields = self._prefixed(self._DHCP_BIND_PREFIX, {
             "_OBJ_InstID": "-1",
-            "Name": name,
-            "IPAddr": ip_address,
-            "MACAddr": mac,
+            "Name": spec.name,
+            "IPAddr": spec.ip_address,
+            "MACAddr": spec.mac,
         })
         return self._post_action(
-            self.DHCP_VIEW_URL, self.DHCP_BINDINGS_URL,
-            action="Apply", fields=fields,
+            self.DHCP_VIEW_URL,
+            self.DHCP_BINDINGS_URL,
+            action="Apply",
+            fields=fields,
         )
 
     def del_dhcp_reservation(self, inst_id: str) -> Tuple[bool, str]:
@@ -930,18 +945,7 @@ class ZTEH388XAPI:
         ip_address: Optional[str] = None,
         mac: Optional[str] = None,
     ) -> Tuple[bool, str]:
-        """Edit an existing DHCPv4 reservation (full ``IF_ACTION=Apply``
-        with the real ``_OBJ_InstID``).
-
-        Read-modify-write, mirroring ``edit_port_forwarding_rule``: reads
-        the current row first and only overrides the fields passed as
-        non-``None``; the rest is resubmitted unchanged so a partial edit
-        never clobbers untouched fields. Returns ``(False, msg)`` if the
-        binding id is unknown.
-
-        Note the live constraint inherited from add: the IP must stay
-        inside the DHCP pool or the modem replies ``IF_ERRORID=-257``.
-        """
+        """Edit a DHCPv4 reservation after validating its final payload."""
         current = next(
             (r for r in self.get_dhcp_bindings()
              if r.get("_OBJ_InstID") == inst_id),
@@ -950,18 +954,28 @@ class ZTEH388XAPI:
         if current is None:
             return False, f"binding {inst_id!r} not found"
 
-        def _pick(new: object, key: str) -> str:
+        def pick(new: object, key: str) -> str:
             return str(new) if new is not None else current.get(key, "")
 
+        try:
+            spec = DhcpReservationSpec(
+                name=pick(name, "Name"),
+                ip_address=pick(ip_address, "IPAddr"),
+                mac=pick(mac, "MACAddr"),
+            )
+        except ValidationError as exc:
+            return False, f"validation error: {validation_error_message(exc)}"
         fields = self._prefixed(self._DHCP_BIND_PREFIX, {
             "_OBJ_InstID": inst_id,
-            "Name": _pick(name, "Name"),
-            "IPAddr": _pick(ip_address, "IPAddr"),
-            "MACAddr": _pick(mac, "MACAddr"),
+            "Name": spec.name,
+            "IPAddr": spec.ip_address,
+            "MACAddr": spec.mac,
         })
         return self._post_action(
-            self.DHCP_VIEW_URL, self.DHCP_BINDINGS_URL,
-            action="Apply", fields=fields,
+            self.DHCP_VIEW_URL,
+            self.DHCP_BINDINGS_URL,
+            action="Apply",
+            fields=fields,
         )
 
     # ------------------------------------------------------------------- DNS
@@ -1400,21 +1414,21 @@ class ZTEH388XAPI:
     _FWURL_PREFIX = "OBJ_FWURL_ID"
 
     def add_url_filter_rule(self, name: str, url: str) -> Tuple[bool, str]:
-        """Create a URL-filter rule (POST ``IF_ACTION=Apply`` +
-        ``_OBJ_InstID=-1``).
-
-        Only blocks the given URL; existing routes are untouched. The
-        master URL-filter toggle lives in the ``firewall`` view and must
-        be on for the rule to take effect.
-        """
+        """Create a URL-filter rule after observed WebUI validation."""
+        try:
+            spec = UrlFilterSpec(name=name, url=url)
+        except ValidationError as exc:
+            return False, f"validation error: {validation_error_message(exc)}"
         fields = self._prefixed(self._FWURL_PREFIX, {
             "_OBJ_InstID": "-1",
-            "Name": name,
-            "Url": url,
+            "Name": spec.name,
+            "Url": spec.url,
         })
         return self._post_action(
-            self.FILTER_CRITERIA_VIEW_URL, self.FW_URLFILTER_URL,
-            action="Apply", fields=fields,
+            self.FILTER_CRITERIA_VIEW_URL,
+            self.FW_URLFILTER_URL,
+            action="Apply",
+            fields=fields,
         )
 
     def del_url_filter_rule(self, inst_id: str) -> Tuple[bool, str]:
@@ -1456,52 +1470,53 @@ class ZTEH388XAPI:
         out_iface: str = "",
         dscp: str = "",
     ) -> Tuple[bool, str]:
-        """Create an IP-filter rule (POST ``IF_ACTION=Apply`` +
-        ``_OBJ_InstID=-1``).
+        """Create an IP-filter rule after known WebUI validation."""
+        try:
+            spec = IpFilterSpec(
+                name=name,
+                protocol=protocol,
+                target=target,
+                filter_index=filter_index,
+                ip_version=ip_version,
+                source_ip=source_ip,
+                dest_ip=dest_ip,
+                min_src_port=min_src_port,
+                max_src_port=max_src_port,
+                min_dst_port=min_dst_port,
+                max_dst_port=max_dst_port,
+                dscp=dscp,
+            )
+        except ValidationError as exc:
+            return False, f"validation error: {validation_error_message(exc)}"
 
-        ``protocol`` is ``ICMP``/``TCP``/``UDP`` (case-insensitive) or a
-        raw 1..255 number. ``target`` is ``allow`` (default, safe) or
-        ``deny``. The modem normalises ``filter_index`` (1..20) to the
-        next free slot. Empty IP/port/interface fields mean "any".
-        """
-        proto = protocol.upper()
-        proto_num = self._IP_PROTO_MAP.get(proto)
-        if proto_num is None:
-            if proto.isdigit() and 1 <= int(proto) <= 255:
-                proto_num = proto
-            else:
-                return False, (
-                    f"protocol must be ICMP/TCP/UDP or 1-255 (got {protocol!r})"
-                )
-        tgt = {"allow": "1", "permit": "1", "deny": "0", "drop": "0"}.get(
-            target.lower()
-        )
-        if tgt is None:
-            return False, f"target must be allow/deny (got {target!r})"
+        proto_num = self._IP_PROTO_MAP.get(spec.protocol, spec.protocol)
+        target_num = "1" if spec.target == "allow" else "0"
         fields = self._prefixed(self._FWIP_PREFIX, {
             "_OBJ_InstID": "-1",
             "Enable": "1" if enable else "0",
-            "Name": name,
-            "FilterTarget": tgt,
-            "FilterIndex": str(filter_index),
-            "IPVersion": ip_version,
-            "SourceIP": source_ip,
+            "Name": spec.name,
+            "FilterTarget": target_num,
+            "FilterIndex": str(spec.filter_index),
+            "IPVersion": spec.ip_version,
+            "SourceIP": spec.source_ip,
             "SourceIPMask": source_mask,
-            "DestIP": dest_ip,
+            "DestIP": spec.dest_ip,
             "DestIPMask": dest_mask,
             "S_Protocol": proto_num,
             "Protocol": proto_num,
-            "MinSrcPort": min_src_port,
-            "MaxSrcPort": max_src_port,
-            "MinDstPort": min_dst_port,
-            "MaxDstPort": max_dst_port,
+            "MinSrcPort": spec.min_src_port,
+            "MaxSrcPort": spec.max_src_port,
+            "MinDstPort": spec.min_dst_port,
+            "MaxDstPort": spec.max_dst_port,
             "INCViewName": in_iface,
             "OUTCViewName": out_iface,
-            "DSCP": dscp,
+            "DSCP": spec.dscp,
         })
         return self._post_action(
-            self.FILTER_CRITERIA_VIEW_URL, self.FW_IPFILTER_URL,
-            action="Apply", fields=fields,
+            self.FILTER_CRITERIA_VIEW_URL,
+            self.FW_IPFILTER_URL,
+            action="Apply",
+            fields=fields,
         )
 
     def del_ip_filter_rule(self, inst_id: str) -> Tuple[bool, str]:

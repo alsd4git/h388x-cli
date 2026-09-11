@@ -15,6 +15,7 @@ from rich.text import Text
 
 from .api import ZTEH388XAPI
 from .devices import (
+    apply_import_plan as _apply_import_plan,
     merge_devices as _merge_devices,
     norm_mac as _norm_mac,
     plan_import as _plan_import,
@@ -1680,19 +1681,19 @@ def devices_import(
         ..., help="JSON file with [{mac, ip, name}] entries to apply."
     ),
     dry_run: bool = typer.Option(
-        False, "--dry-run",
-        help="Show the diff without writing anything to the modem.",
+        False,
+        "--dry-run",
+        help="Validate and show the diff without writing anything to the modem.",
     ),
     host: str = _host_opt(),
     user: str = _user_opt(),
     password: Optional[str] = _pwd_opt(),
     insecure: bool = _insecure_opt(),
 ):
-    """Apply reservation names from a JSON file, idempotently.
+    """Apply reservation names from JSON with validation-first semantics.
 
-    Adds missing reservations and edits names/IPs that differ; existing
-    matching reservations are left untouched. Never deletes. Use
-    ``--dry-run`` to preview the plan.
+    The complete plan is validated before the first write. During apply the
+    command stops at the first failed write and reports partial application.
     """
     try:
         with open(file, "r", encoding="utf-8") as fh:
@@ -1715,41 +1716,38 @@ def devices_import(
     try:
         bindings = [DhcpBinding.model_validate(r) for r in api.get_dhcp_bindings()]
         plan = _plan_import(entries, bindings)
+        preflight_errors = sum(1 for item in plan if item["action"] == "error")
 
-        if not dry_run:
-            for item in plan:
-                if item["action"] == "add":
-                    ok, body = api.add_dhcp_reservation(
-                        mac=item["mac"], ip_address=item["ip"], name=item["name"],
-                    )
-                    item["ok"] = ok
-                    if not ok:
-                        item["raw"] = body[:200]
-                elif item["action"] == "edit":
-                    ok, body = api.edit_dhcp_reservation(
-                        item["id"], name=item["name"], ip_address=item["ip"],
-                    )
-                    item["ok"] = ok
-                    if not ok:
-                        item["raw"] = body[:200]
+        if dry_run:
+            apply_ok = preflight_errors == 0
+            summary = {
+                "applied": 0,
+                "failed": 0,
+                "skipped": 0,
+                "partial": False,
+                "preflight_errors": preflight_errors,
+            }
+        else:
+            apply_ok, summary = _apply_import_plan(api, plan)
 
         if state.json:
-            _emit_json({"ok": True, "dry_run": dry_run, "plan": plan})
+            _emit_json({
+                "ok": apply_ok,
+                "dry_run": dry_run,
+                "summary": summary,
+                "plan": plan,
+            })
+            if not apply_ok:
+                raise typer.Exit(code=1)
             return
 
-        table = Table(
-            title=f"Import plan ({'dry-run' if dry_run else 'applied'})"
-        )
+        table = Table(title=f"Import plan ({'dry-run' if dry_run else 'applied'})")
         table.add_column("Action")
         table.add_column("Name", style="cyan")
         table.add_column("IP", style="green")
         table.add_column("MAC")
         table.add_column("Detail", style="dim")
-
-        colors = {
-            "add": "green", "edit": "yellow",
-            "unchanged": "dim", "error": "red",
-        }
+        colors = {"add": "green", "edit": "yellow", "unchanged": "dim", "error": "red"}
         for item in plan:
             action = item["action"]
             color = colors.get(action, "white")
@@ -1759,7 +1757,11 @@ def devices_import(
                 detail = item.get("error", "")
             else:
                 detail = ""
-            if not dry_run and "ok" in item and not item["ok"]:
+            if item.get("skipped"):
+                action = f"{action} SKIPPED"
+                color = "yellow"
+                detail = item["skipped"]
+            elif not dry_run and "ok" in item and not item["ok"]:
                 action = f"{action} FAILED"
                 color = "red"
                 detail = item.get("raw", detail)
@@ -1771,17 +1773,28 @@ def devices_import(
                 detail,
             )
         console.print(table)
-        n_add = sum(1 for i in plan if i["action"] == "add")
-        n_edit = sum(1 for i in plan if i["action"] == "edit")
-        n_same = sum(1 for i in plan if i["action"] == "unchanged")
-        n_err = sum(1 for i in plan if i["action"] == "error")
+        n_add = sum(1 for item in plan if item["action"] == "add")
+        n_edit = sum(1 for item in plan if item["action"] == "edit")
+        n_same = sum(1 for item in plan if item["action"] == "unchanged")
+        n_err = sum(1 for item in plan if item["action"] == "error")
         console.print(
-            f"[dim]add={n_add} edit={n_edit} unchanged={n_same} error={n_err}"
-            + ("  (dry-run, nothing written)" if dry_run else "") + "[/dim]"
+            f"[dim]add={n_add} edit={n_edit} unchanged={n_same} error={n_err} "
+            f"applied={summary['applied']} failed={summary['failed']} "
+            f"skipped={summary['skipped']}"
+            + ("  (dry-run, nothing written)" if dry_run else "")
+            + "[/dim]"
         )
+        if not apply_ok:
+            if summary.get("partial"):
+                console.print(
+                    "[red]Import stopped after a write failure. Some earlier changes "
+                    "were already applied; review the plan before retrying.[/red]"
+                )
+            elif preflight_errors:
+                console.print("[red]Preflight failed; no modem changes were attempted.[/red]")
+            raise typer.Exit(code=1)
     finally:
         api.close()
-
 
 @devices_app.command("set")
 def devices_set(
@@ -2011,37 +2024,34 @@ def devices_edit(
         table.add_column("Name", style="cyan")
         table.add_column("IP", style="green")
         table.add_column("MAC")
-        colors = {"add": "green", "edit": "yellow", "clear": "red"}
-        for kind, r, new in actions:
-            table.add_row(
-                f"[{colors[kind]}]{kind}[/{colors[kind]}]",
-                (new if new is not None else r["name"]) or "-",
-                r["ipv4"] or "-",
-                Text(r["mac"] or "-"),
-            )
-        console.print()
-        console.print(table)
-
-        if not typer.confirm("Apply these changes?"):
-            console.print("[yellow]Aborted.[/yellow] Nothing written.")
-            raise typer.Exit(code=1)
-
-        for kind, r, new in actions:
+        applied = 0
+        for index, (kind, r, new) in enumerate(actions):
             if kind == "edit":
                 ok, body = api.edit_dhcp_reservation(r["reservation_id"], name=new)
             elif kind == "add":
                 ok, body = api.add_dhcp_reservation(
                     mac=r["mac"], ip_address=r["ipv4"], name=new,
                 )
-            else:  # clear
+            else:
                 ok, body = api.del_dhcp_reservation(r["reservation_id"])
             label = (new if new is not None else r["name"]) or "-"
             if ok:
-                console.print(f"[green]{kind}[/green] [cyan]{label}[/cyan] → {r['ipv4'] or '-'}")
-            else:
+                applied += 1
                 console.print(
-                    f"[red]{kind} FAILED[/red] for {label}: [dim]{body[:200]}[/dim]"
+                    f"[green]{kind}[/green] [cyan]{label}[/cyan] → {r['ipv4'] or '-'}"
                 )
+                continue
+
+            remaining = len(actions) - index - 1
+            console.print(
+                f"[red]{kind} FAILED[/red] for {label}: [dim]{body[:200]}[/dim]"
+            )
+            console.print(
+                f"[red]Stopped after failure: applied={applied}, failed=1, "
+                f"skipped={remaining}. Earlier successful changes remain applied.[/red]"
+            )
+            raise typer.Exit(code=1)
+
     finally:
         api.close()
 

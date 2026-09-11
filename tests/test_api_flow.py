@@ -493,7 +493,7 @@ def test_add_dhcp_reservation_uses_apply_with_inst_id_minus_one(api):
     assert "OBJ_DHCPBIND_ID.IPAddr=192.168.1.200" in sent
     # MAC ":" url-encoded as %3A by requests; assert prefix + value parts.
     assert "OBJ_DHCPBIND_ID.MACAddr=" in sent
-    assert "AA%3ABB%3ACC%3ADD%3AEE%3AFF" in sent
+    assert "aa%3abb%3acc%3add%3aee%3aff" in sent.lower()
     # No bare (unprefixed) leak of the ParaNames.
     assert "&Name=my-laptop" not in sent
     assert "&IPAddr=" not in sent
@@ -569,7 +569,7 @@ def test_edit_dhcp_reservation_overrides_only_given_fields(api):
     assert "OBJ_DHCPBIND_ID.Name=new-name" in sent
     # untouched fields preserved from the read-back row
     assert "OBJ_DHCPBIND_ID.IPAddr=192.168.1.50" in sent
-    assert "AA%3ABB%3ACC%3ADD%3AEE%3AFF" in sent
+    assert "aa%3abb%3acc%3add%3aee%3aff" in sent.lower()
 
 
 @responses.activate

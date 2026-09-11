@@ -70,7 +70,7 @@ class PortForwardSpec(WriteSpec):
     def validate_protocol(cls, value: str) -> str:
         value = value.upper()
         if value not in {"TCP", "UDP", "BOTH"}:
-            raise ValueError("must be TCP, UDP, or BOTH")
+            raise ValueError("must be TCP/UDP/BOTH")
         return value
 
     @field_validator("external_port", "external_port_end", "internal_port")
@@ -179,7 +179,7 @@ class IpFilterSpec(WriteSpec):
         lower = value.lower()
         aliases = {"allow": "allow", "permit": "allow", "deny": "deny", "drop": "deny"}
         if lower not in aliases:
-            raise ValueError("must be allow or deny")
+            raise ValueError("must be allow/deny")
         return aliases[lower]
 
     @field_validator("filter_index")
