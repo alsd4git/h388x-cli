@@ -14,6 +14,17 @@ for filename in ("h388x_cli/api_services.py", "h388x_cli/api_wifi.py"):
         )
     path.write_text(text, encoding="utf-8")
 
+# Preserve the pre-refactor import path used by callers/tests. The redundant
+# alias is intentional: it is an explicit re-export from api.py.
+api_path = Path("h388x_cli/api.py")
+api = api_path.read_text(encoding="utf-8")
+api = api.replace(
+    "from .transport import H388XTransport\n",
+    "from .transport import H388XTransport, _default_cache_dir as _default_cache_dir\n",
+    1,
+)
+api_path.write_text(api, encoding="utf-8")
+
 # The compatibility tuple is executable code, so it must follow every import.
 # Remove every copy regardless of whitespace, then add exactly one before app=.
 path = Path("h388x_cli/cli.py")
