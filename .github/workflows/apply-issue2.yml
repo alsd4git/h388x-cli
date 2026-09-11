@@ -20,7 +20,9 @@ jobs:
           version: latest-known
           enable-cache: true
       - name: Apply source changes
-        run: python .github/scripts/apply_issue2.py
+        run: |
+          python .github/scripts/apply_issue2.py
+          python .github/scripts/fix_issue2_indent.py
       - name: Validate
         run: |
           uv sync --locked --dev
