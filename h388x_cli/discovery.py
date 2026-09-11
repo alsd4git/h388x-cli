@@ -105,14 +105,28 @@ _MUTATING_TOKENS = frozenset(
 # those known action families; importantly, generic ``set*`` is NOT here, so
 # read-only nouns such as ``setting`` / ``settings`` are not false positives.
 _MUTATING_COMPOUND_PREFIXES = (
-    "restartmgr",
-    "rebootmgr",
-    "resetmgr",
-    "upgrademgr",
+    "factoryreset",
+    "factorydefault",
+    "delete",
+    "remove",
+    "disable",
+    "enable",
+    "clear",
+    "wipe",
+    "restart",
+    "reboot",
+    "reset",
+    "upgrade",
     "download",
     "upload",
     "backup",
     "restore",
+    "import",
+    "export",
+    "apply",
+    "submit",
+    "kick",
+    "block",
 )
 
 # Asset extensions worth fetching to mine for endpoint references.

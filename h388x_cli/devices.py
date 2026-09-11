@@ -6,6 +6,7 @@ import ipaddress
 import re
 from typing import Any, Dict, List, Optional
 
+from .errors import H388XError
 from .models import Client, DhcpBinding
 
 
@@ -262,14 +263,17 @@ def apply_import_plan(
             skipped += 1
             continue
 
-        if action == "add":
-            ok, body = api.add_dhcp_reservation(
-                mac=item["mac"], ip_address=item["ip"], name=item["name"]
-            )
-        else:
-            ok, body = api.edit_dhcp_reservation(
-                item["id"], name=item["name"], ip_address=item["ip"]
-            )
+        try:
+            if action == "add":
+                ok, body = api.add_dhcp_reservation(
+                    mac=item["mac"], ip_address=item["ip"], name=item["name"]
+                )
+            else:
+                ok, body = api.edit_dhcp_reservation(
+                    item["id"], name=item["name"], ip_address=item["ip"]
+                )
+        except H388XError as exc:
+            ok, body = False, f"{exc.code}: {exc}"
 
         item["ok"] = bool(ok)
         if ok:

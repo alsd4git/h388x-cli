@@ -243,6 +243,21 @@ def test_mutating_classifier_uses_semantic_tokens_not_substrings():
     assert Spider._looks_mutating("do_download_usercfg.lua") is True
     assert Spider._looks_mutating("devmgr_restartmgr_lua.lua") is True
     assert Spider._looks_mutating("firmwareUpdate.lua") is True
+    assert Spider._looks_mutating("factoryreset_lua.lua") is True
+    assert Spider._looks_mutating("deleteentry_lua.lua") is True
+    assert Spider._looks_mutating("disablewifi_lua.lua") is True
+
+
+def test_concatenated_mutating_tags_are_recorded_but_never_queued():
+    api = MagicMock()
+    spider = Spider(api, delay=0)
+
+    for tag in ("factoryreset_lua.lua", "deleteentry_lua.lua", "disablewifi_lua.lua"):
+        ep = spider._record_endpoint("menuData", tag, {}, source="test")
+        assert ep is not None
+        assert ep.skipped_reason == "mutating-name"
+
+    assert list(spider._endpoint_queue) == []
 
 
 def test_session_timeout_relogin_retries_and_records_only_final_payload():
