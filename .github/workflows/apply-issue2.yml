@@ -23,7 +23,7 @@ jobs:
         run: |
           python .github/scripts/apply_issue2.py
           python .github/scripts/fix_issue2_indent.py
-      - name: Validate
+      - name: Validate issue #2 behavior
         run: |
           uv sync --locked --dev
           uv run ruff check h388x_cli tests
