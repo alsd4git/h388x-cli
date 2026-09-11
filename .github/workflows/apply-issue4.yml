@@ -21,7 +21,9 @@ jobs:
           version: latest-known
           enable-cache: true
       - name: Apply mechanical module split
-        run: python .github/scripts/apply_issue4.py
+        run: |
+          python .github/scripts/apply_issue4.py
+          python .github/scripts/fix_issue4.py
       - name: Normalize imports and formatting
         run: |
           uv sync --locked --dev
