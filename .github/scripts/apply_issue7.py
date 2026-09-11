@@ -84,6 +84,18 @@ def test_capability_without_observed_endpoints_reports_none():
 '''
 path.write_text(tests, encoding="utf-8")
 
+# The capability payload shape/meaning changed intentionally, so bump the
+# smoke-test contract alongside COVERAGE_SCHEMA_VERSION.
+path = Path("tests/test_cli_smoke.py")
+smoke = path.read_text(encoding="utf-8")
+old_schema_assert = '    assert payload["schema_version"] == "1"\n'
+if old_schema_assert not in smoke:
+    raise SystemExit("capability schema smoke assertion not found")
+path.write_text(
+    smoke.replace(old_schema_assert, '    assert payload["schema_version"] == "2"\n', 1),
+    encoding="utf-8",
+)
+
 # Broaden only conventional sensitive-output names; arbitrary names are called
 # out explicitly in documentation because a .gitignore cannot protect them.
 path = Path(".gitignore")
