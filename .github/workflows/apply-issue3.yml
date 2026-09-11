@@ -21,7 +21,7 @@ jobs:
           enable-cache: true
       - name: Apply issue #3 source and tests
         run: python .github/scripts/apply_issue3.py
-      - name: Validate issue #3 behavior
+      - name: Validate issue #3 behavior and safety
         run: |
           uv sync --locked --dev
           uv run ruff check h388x_cli tests
