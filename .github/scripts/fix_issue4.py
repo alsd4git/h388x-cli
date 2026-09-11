@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 # Domain methods keep using the typed errors defined before the split.
@@ -14,18 +15,28 @@ for filename in ("h388x_cli/api_services.py", "h388x_cli/api_wifi.py"):
     path.write_text(text, encoding="utf-8")
 
 # The compatibility tuple is executable code, so it must follow every import.
+# Remove every copy regardless of whitespace, then add exactly one before app=.
 path = Path("h388x_cli/cli.py")
 text = path.read_text(encoding="utf-8")
+pattern = re.compile(
+    r"\n?# Backward-compatible internal helper aliases retained across the CLI split\.\n"
+    r"_LEGACY_DEVICE_HELPERS\s*=\s*\(.*?\)\n",
+    re.DOTALL,
+)
+text, removed = pattern.subn("\n", text)
+if removed < 1:
+    raise SystemExit("legacy helper compatibility block not found")
 compat = '''# Backward-compatible internal helper aliases retained across the CLI split.
 _LEGACY_DEVICE_HELPERS = (
-    _norm_mac, _merge_devices, _reservations_export, _plan_import
+    _norm_mac,
+    _merge_devices,
+    _reservations_export,
+    _plan_import,
 )
+
 '''
-if compat not in text:
-    raise SystemExit("legacy helper compatibility block not found")
-text = text.replace(compat + "\n", "", 1)
 anchor = 'app = typer.Typer(help="H388X Modem CLI Management Tool", no_args_is_help=True)\n'
 if anchor not in text:
     raise SystemExit("Typer app declaration not found")
-text = text.replace(anchor, compat + "\n" + anchor, 1)
+text = text.replace(anchor, compat + anchor, 1)
 path.write_text(text, encoding="utf-8")
