@@ -31,6 +31,7 @@ jobs:
       - name: Run release quality gate
         run: |
           uv run ruff check h388x_cli tests
+          uv run ruff format --check h388x_cli tests
           uv run pytest
 
       - name: Build package
