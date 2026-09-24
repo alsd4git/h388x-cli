@@ -1,7 +1,7 @@
 # WebUI coverage matrix
 
 Inventory of the TIM HUB+ **AGZHM_1.4.4** firmware built from the endpoints
-implemented in `h388x_cli/api.py`, the local discovery report, and the commands
+implemented in `h388x_cli/api*.py`, the local discovery report, and the commands
 documented in `README.md`.
 
 The matrix is intentionally conservative. "covered" means the CLI path is
@@ -138,10 +138,11 @@ and it intentionally disrupts connectivity.
 
 ## Source and maintenance
 
-- Endpoints and parent views: `ZTEH388XAPI` constants and `ROADMAP.md`.
-- Commands: `README.md` and Typer registration in `h388x_cli/cli.py`.
+- Endpoints and parent views: `ZTEH388XAPI` constants/domain mixins and
+  `ROADMAP.md`.
+- Commands: `README.md` and Typer registration across `h388x_cli/cli*.py`.
 - Machine-readable catalog: `h388x_cli/coverage.py`, exposed by
-  `h388x capabilities` with `schema_version=1`.
+  `h388x capabilities` with `schema_version=2`.
 - Live state: update after each `h388x discover`. `endpoints.json` stays
   local and gitignored because it may contain serial numbers and authenticated
   samples.
