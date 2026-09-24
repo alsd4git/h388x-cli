@@ -5,10 +5,26 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "h388x-cli"
 version = "0.1.0"
-description = "A CLI tool to manage the ZTE H388X (TIM HUB+) modem"
+description = "Command-line interface for the TIM HUB+ ZTE H388X modem/router"
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.10"
+authors = [
+    { name = "Alessandro Digilio" },
+]
+keywords = ["zte", "h388x", "tim-hub-plus", "router", "modem", "cli"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Networking",
+]
 dependencies = [
     "typer>=0.12",
     "pydantic>=2.0",
@@ -17,8 +33,12 @@ dependencies = [
     "requests>=2.32.4",
 ]
 
+[project.urls]
+Repository = "https://github.com/alsd4git/h388x-cli"
+Issues = "https://github.com/alsd4git/h388x-cli/issues"
+
 [project.scripts]
-h388x = "h388x_cli.cli:app"
+h388x = "h388x_cli.cli:run_cli"
 
 [tool.setuptools]
 packages = ["h388x_cli"]
@@ -29,6 +49,17 @@ addopts = "-ra --strict-markers"
 markers = [
     "real_device: opt-in read-only smoke test against a configured H388X modem",
 ]
+
+[tool.coverage.run]
+source = ["h388x_cli"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+# Initial CI floor based on the measured baseline when coverage gating was introduced.
+# Raise this progressively as CLI/discovery tests are expanded.
+fail_under = 40
 
 [dependency-groups]
 dev = [

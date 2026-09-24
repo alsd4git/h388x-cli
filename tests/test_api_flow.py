@@ -13,6 +13,7 @@ import pytest
 import responses
 
 from h388x_cli.api import ZTEH388XAPI
+from h388x_cli.errors import ParseError, SessionExpiredError
 
 
 HOST = "http://modem.test"
@@ -29,8 +30,11 @@ def api(tmp_path):
     ``~/.cache/h388x-cli``.
     """
     api = ZTEH388XAPI(
-        HOST, "admin", "password",
-        cache_enabled=False, cache_dir=tmp_path,
+        HOST,
+        "admin",
+        "password",
+        cache_enabled=False,
+        cache_dir=tmp_path,
     )
     api.session_token = "FAKE-TOKEN"
     return api
@@ -38,21 +42,22 @@ def api(tmp_path):
 
 # --- session expired detection wired through _menudata ---------------------
 
+
 @responses.activate
-def test_menudata_returns_empty_on_session_timeout_when_no_relogin(api):
-    """If we say ``retry=False`` and the modem says SessionTimeout, we get []."""
+def test_menudata_raises_session_expired_when_retry_is_exhausted(api):
+    """An expired session is not a legitimate empty table."""
     view = f"{HOST}/?_type=menuView&_tag=accountMgr&Menu3Location=0"
     data = f"{HOST}/?_type=menuData&_tag=devauth_accountmgr_lua.lua"
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(responses.GET, data, body="<root>SessionTimeout</root>", status=200)
 
-    rows = api._menudata(
-        "/?_type=menuView&_tag=accountMgr&Menu3Location=0",
-        "/?_type=menuData&_tag=devauth_accountmgr_lua.lua",
-        "OBJ_USERINFO_ID",
-        retry=False,
-    )
-    assert rows == []
+    with pytest.raises(SessionExpiredError):
+        api._menudata(
+            "/?_type=menuView&_tag=accountMgr&Menu3Location=0",
+            "/?_type=menuData&_tag=devauth_accountmgr_lua.lua",
+            "OBJ_USERINFO_ID",
+            retry=False,
+        )
 
 
 # --- happy path against the admin-users endpoint ---------------------------
@@ -107,10 +112,12 @@ def test_get_wifi_clients_uses_required_arming_sequence(api):
 
     rows = api.get_wifi_clients(retry=False)
 
-    assert rows == [{
-        "_InstID": "DEV.WIFI1",
-        "MACAddress": "02:00:00:00:00:01",
-    }]
+    assert rows == [
+        {
+            "_InstID": "DEV.WIFI1",
+            "MACAddress": "02:00:00:00:00:01",
+        }
+    ]
     assert [call.request.url for call in responses.calls] == [
         f"{HOST}{api.LOCALNET_VIEW_URL}",
         f"{HOST}{api.WLAN_APS_URL}",
@@ -206,7 +213,7 @@ def test_get_topology_parses_json(api):
 
 
 @responses.activate
-def test_get_topology_returns_empty_on_invalid_json(api):
+def test_get_topology_raises_on_invalid_json(api):
     responses.add(
         responses.GET,
         f"{HOST}{api.TOPOLOGY_VIEW_URL}",
@@ -219,7 +226,8 @@ def test_get_topology_returns_empty_on_invalid_json(api):
         body="not json {{{",
         status=200,
     )
-    assert api.get_topology(retry=False) == {}
+    with pytest.raises(ParseError):
+        api.get_topology(retry=False)
 
 
 # --- hidden endpoint: SNTP -------------------------------------------------
@@ -258,6 +266,7 @@ def test_get_sntp_no_view_arming(api):
 
 
 # --- session re-login path -------------------------------------------------
+
 
 @responses.activate
 def test_menudata_relogins_on_session_timeout(api):
@@ -310,8 +319,10 @@ def test_set_web_login_timeout_happy_path(api):
 
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "FRESH-TOKEN"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "FRESH-TOKEN"},
+        status=200,
     )
     responses.add(responses.POST, data, body=OK_XML, status=200)
 
@@ -340,8 +351,10 @@ def test_set_web_login_timeout_surfaces_modem_error(api):
 
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "FRESH-TOKEN"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "FRESH-TOKEN"},
+        status=200,
     )
     responses.add(responses.POST, data, body=ERR_PAGE_EXPIRED_XML, status=200)
 
@@ -360,18 +373,24 @@ def test_post_action_retries_on_session_timeout(api):
     # First attempt:
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "T1"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "T1"},
+        status=200,
     )
     responses.add(
-        responses.POST, data,
-        body="<root>SessionTimeout</root>", status=200,
+        responses.POST,
+        data,
+        body="<root>SessionTimeout</root>",
+        status=200,
     )
     # After re-login (mocked):
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "T2"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "T2"},
+        status=200,
     )
     responses.add(responses.POST, data, body=OK_XML, status=200)
 
@@ -382,6 +401,7 @@ def test_post_action_retries_on_session_timeout(api):
 
 
 # --- port-forwarding write actions -----------------------------------------
+
 
 @responses.activate
 def test_add_port_forwarding_rule_uses_apply_with_inst_id_minus_one(api):
@@ -394,14 +414,18 @@ def test_add_port_forwarding_rule_uses_apply_with_inst_id_minus_one(api):
 
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "FRESH-TOKEN"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "FRESH-TOKEN"},
+        status=200,
     )
     responses.add(responses.POST, data, body=OK_XML, status=200)
 
     ok, body = api.add_port_forwarding_rule(
-        description="ssh", protocol="tcp",
-        external_port=22, internal_client="192.168.1.50",
+        description="ssh",
+        protocol="tcp",
+        external_port=22,
+        internal_client="192.168.1.50",
     )
     assert ok is True
 
@@ -426,8 +450,10 @@ def test_add_port_forwarding_rule_uses_apply_with_inst_id_minus_one(api):
 def test_add_port_forwarding_rejects_invalid_protocol(api):
     """Protocol validation runs entirely client-side; no HTTP traffic."""
     ok, body = api.add_port_forwarding_rule(
-        description="x", protocol="GRE",
-        external_port=80, internal_client="192.168.1.1",
+        description="x",
+        protocol="GRE",
+        external_port=80,
+        internal_client="192.168.1.1",
     )
     assert ok is False
     assert "TCP/UDP/BOTH" in body
@@ -443,8 +469,10 @@ def test_del_port_forwarding_rule_uses_delete_action(api):
 
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "FRESH-TOKEN"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "FRESH-TOKEN"},
+        status=200,
     )
     responses.add(responses.POST, data, body=OK_XML, status=200)
 
@@ -461,6 +489,7 @@ def test_del_port_forwarding_rule_uses_delete_action(api):
 
 # --- DHCPv4 reservations write actions -------------------------------------
 
+
 @responses.activate
 def test_add_dhcp_reservation_uses_apply_with_inst_id_minus_one(api):
     """New reservations submit ``IF_ACTION=Apply`` +
@@ -473,8 +502,10 @@ def test_add_dhcp_reservation_uses_apply_with_inst_id_minus_one(api):
 
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "FRESH-TOKEN"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "FRESH-TOKEN"},
+        status=200,
     )
     responses.add(responses.POST, data, body=OK_XML, status=200)
 
@@ -493,7 +524,7 @@ def test_add_dhcp_reservation_uses_apply_with_inst_id_minus_one(api):
     assert "OBJ_DHCPBIND_ID.IPAddr=192.168.1.200" in sent
     # MAC ":" url-encoded as %3A by requests; assert prefix + value parts.
     assert "OBJ_DHCPBIND_ID.MACAddr=" in sent
-    assert "AA%3ABB%3ACC%3ADD%3AEE%3AFF" in sent
+    assert "aa%3abb%3acc%3add%3aee%3aff" in sent.lower()
     # No bare (unprefixed) leak of the ParaNames.
     assert "&Name=my-laptop" not in sent
     assert "&IPAddr=" not in sent
@@ -508,8 +539,10 @@ def test_del_dhcp_reservation_uses_delete_action(api):
 
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "FRESH-TOKEN"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "FRESH-TOKEN"},
+        status=200,
     )
     responses.add(responses.POST, data, body=OK_XML, status=200)
 
@@ -538,8 +571,9 @@ def _mock_dhcp_bind_read_then_post(api, row):
     view = f"{HOST}{api.DHCP_VIEW_URL}"
     data = f"{HOST}{api.DHCP_BINDINGS_URL}"
     login = f"{HOST}/?_type=loginData&_tag=login_entry"
-    cells = "".join(f"<ParaName>{k}</ParaName><ParaValue>{v}</ParaValue>"
-                    for k, v in row.items())
+    cells = "".join(
+        f"<ParaName>{k}</ParaName><ParaValue>{v}</ParaValue>" for k, v in row.items()
+    )
     xml = (
         "<ajax_response_xml_root><OBJ_DHCPBIND_ID><Instance>"
         f"{cells}</Instance></OBJ_DHCPBIND_ID></ajax_response_xml_root>"
@@ -569,7 +603,7 @@ def test_edit_dhcp_reservation_overrides_only_given_fields(api):
     assert "OBJ_DHCPBIND_ID.Name=new-name" in sent
     # untouched fields preserved from the read-back row
     assert "OBJ_DHCPBIND_ID.IPAddr=192.168.1.50" in sent
-    assert "AA%3ABB%3ACC%3ADD%3AEE%3AFF" in sent
+    assert "aa%3abb%3acc%3add%3aee%3aff" in sent.lower()
 
 
 @responses.activate
@@ -588,6 +622,7 @@ def test_edit_dhcp_reservation_unknown_id_fails_without_post(api):
 
 # --- firewall URL-filter write actions -------------------------------------
 
+
 @responses.activate
 def test_add_url_filter_rule_uses_apply_with_inst_id_minus_one(api):
     """New URL-filter rows submit ``IF_ACTION=Apply`` +
@@ -598,8 +633,10 @@ def test_add_url_filter_rule_uses_apply_with_inst_id_minus_one(api):
 
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "FRESH-TOKEN"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "FRESH-TOKEN"},
+        status=200,
     )
     responses.add(responses.POST, data, body=OK_XML, status=200)
 
@@ -626,8 +663,10 @@ def test_del_url_filter_rule_uses_delete_action(api):
 
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "FRESH-TOKEN"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "FRESH-TOKEN"},
+        status=200,
     )
     responses.add(responses.POST, data, body=OK_XML, status=200)
 
@@ -643,6 +682,7 @@ def test_del_url_filter_rule_uses_delete_action(api):
 
 # --- firewall IP-filter write actions --------------------------------------
 
+
 @responses.activate
 def test_add_ip_filter_rule_uses_apply_with_inst_id_minus_one(api):
     """New IP-filter rows submit ``IF_ACTION=Apply`` +
@@ -654,8 +694,10 @@ def test_add_ip_filter_rule_uses_apply_with_inst_id_minus_one(api):
 
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "FRESH-TOKEN"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "FRESH-TOKEN"},
+        status=200,
     )
     responses.add(responses.POST, data, body=OK_XML, status=200)
 
@@ -699,8 +741,10 @@ def test_del_ip_filter_rule_uses_delete_action(api):
 
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "FRESH-TOKEN"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "FRESH-TOKEN"},
+        status=200,
     )
     responses.add(responses.POST, data, body=OK_XML, status=200)
 
@@ -716,6 +760,7 @@ def test_del_ip_filter_rule_uses_delete_action(api):
 
 # --- enable/disable toggle (light InstSwitch) ------------------------------
 
+
 @responses.activate
 def test_set_port_forwarding_enabled_sends_only_enable_and_instid(api):
     """The on/off toggle must submit ``IF_ACTION=Apply`` with just the
@@ -727,8 +772,10 @@ def test_set_port_forwarding_enabled_sends_only_enable_and_instid(api):
 
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "FRESH-TOKEN"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "FRESH-TOKEN"},
+        status=200,
     )
     responses.add(responses.POST, data, body=OK_XML, status=200)
 
@@ -754,8 +801,10 @@ def test_set_ip_filter_enabled_off_sends_enable_zero(api):
 
     responses.add(responses.GET, view, body="<root/>", status=200)
     responses.add(
-        responses.GET, login,
-        json={"sess_token": "FRESH-TOKEN"}, status=200,
+        responses.GET,
+        login,
+        json={"sess_token": "FRESH-TOKEN"},
+        status=200,
     )
     responses.add(responses.POST, data, body=OK_XML, status=200)
 
@@ -793,8 +842,9 @@ def _mock_pfwd_read_then_post(api, row):
     data = f"{HOST}{api.PORT_FORWARDING_URL}"
     login = f"{HOST}/?_type=loginData&_tag=login_entry"
     # build an XML row the parser understands
-    cells = "".join(f"<ParaName>{k}</ParaName><ParaValue>{v}</ParaValue>"
-                    for k, v in row.items())
+    cells = "".join(
+        f"<ParaName>{k}</ParaName><ParaValue>{v}</ParaValue>" for k, v in row.items()
+    )
     xml = (
         "<ajax_response_xml_root><OBJ_FWPM_ID><Instance>"
         f"{cells}</Instance></OBJ_FWPM_ID></ajax_response_xml_root>"
@@ -812,7 +862,9 @@ def test_edit_port_forwarding_overrides_only_given_fields(api):
     _mock_pfwd_read_then_post(api, _PFWD_ROW)
 
     ok, _ = api.edit_port_forwarding_rule(
-        "DEV.NAT.PtMapping7", external_port=2222, internal_port=22,
+        "DEV.NAT.PtMapping7",
+        external_port=2222,
+        internal_port=22,
     )
     assert ok is True
 
@@ -865,8 +917,9 @@ def _mock_dhcp_cfg_read_then_post(api, row):
     view = f"{HOST}{api.DHCP_VIEW_URL}"
     data = f"{HOST}{api.DHCP_CONFIG_URL}"
     login = f"{HOST}/?_type=loginData&_tag=login_entry"
-    cells = "".join(f"<ParaName>{k}</ParaName><ParaValue>{v}</ParaValue>"
-                    for k, v in row.items())
+    cells = "".join(
+        f"<ParaName>{k}</ParaName><ParaValue>{v}</ParaValue>" for k, v in row.items()
+    )
     xml = (
         "<ajax_response_xml_root><OBJ_Br0AndDhcpsHosCfg_ID><Instance>"
         f"{cells}</Instance></OBJ_Br0AndDhcpsHosCfg_ID></ajax_response_xml_root>"
@@ -915,19 +968,19 @@ def test_set_dhcp_dns_from_wan_sets_source_one(api):
 # --- config backup (download_config_backup) --------------------------------
 
 _USRCFG_VIEW_HTML = (
-    '<html><body>'
+    "<html><body>"
     '<form name="fDownload" id="fDownload" method="POST" '
     'enctype="multipart/form-data">'
     '<input type="hidden" name="config" id="config">'
     '<input type="hidden" id="TOKEN_DOWNLOAD" name="TOKEN_DOWNLOAD" '
     'value="&#51;&#49;&#53;">'  # HTML-entity encoded "315"
-    '</form></body></html>'
+    "</form></body></html>"
 )
 
 # The "fake 404" reload page the view returns when not freshly armed.
 _FAKE_404_HTML = (
-    '<html><head><script>top.location.href = top.location.href;</script>'
-    '</head><body><h2>404 Not Found</h2></body></html>'
+    "<html><head><script>top.location.href = top.location.href;</script>"
+    "</head><body><h2>404 Not Found</h2></body></html>"
 )
 
 _CONFIG_BYTES = b"\x04\x03\x02\x01\x00\x00\x00\x00\x00\x00\x00\x05H388X" + b"\x00" * 64
@@ -940,7 +993,10 @@ def test_download_config_backup_happy_path(api):
     dl = f"{HOST}{api.CONFIG_DOWNLOAD_URL}"
     responses.add(responses.GET, view, body=_USRCFG_VIEW_HTML, status=200)
     responses.add(
-        responses.POST, dl, body=_CONFIG_BYTES, status=200,
+        responses.POST,
+        dl,
+        body=_CONFIG_BYTES,
+        status=200,
         content_type="application/octet-stream",
     )
 
@@ -965,7 +1021,10 @@ def test_download_config_backup_relogins_when_view_not_armed(api):
     responses.add(responses.GET, view, body=_FAKE_404_HTML, status=200)
     responses.add(responses.GET, view, body=_USRCFG_VIEW_HTML, status=200)
     responses.add(
-        responses.POST, dl, body=_CONFIG_BYTES, status=200,
+        responses.POST,
+        dl,
+        body=_CONFIG_BYTES,
+        status=200,
         content_type="application/octet-stream",
     )
 
@@ -998,6 +1057,7 @@ def test_download_config_backup_fails_without_relogin_loop(api):
 
 # --- network diagnostics: ping / traceroute --------------------------------
 
+
 def _instance(fields):
     """Build one <Instance> block from an ordered dict of name -> value."""
     parts = ["<Instance>"]
@@ -1013,7 +1073,12 @@ def _diag_xml(root, fields):
 
 PING_RUNNING_XML = _diag_xml(
     "OBJ_DEVPING_ID",
-    {"_InstID": "", "Host": "1.1.1.1", "DiagnosticsState": "Requested", "PingAck": "NULL"},
+    {
+        "_InstID": "",
+        "Host": "1.1.1.1",
+        "DiagnosticsState": "Requested",
+        "PingAck": "NULL",
+    },
 )
 PING_DONE_XML = _diag_xml(
     "OBJ_DEVPING_ID",
@@ -1027,7 +1092,13 @@ PING_DONE_XML = _diag_xml(
 
 TRACERT_RUNNING_XML = _diag_xml(
     "OBJ_TRACERT_ID",
-    {"_InstID": "", "Host": "1.1.1.1", "Flag": "1", "DiagnosticsState": "Requested", "Result": "NULL"},
+    {
+        "_InstID": "",
+        "Host": "1.1.1.1",
+        "Flag": "1",
+        "DiagnosticsState": "Requested",
+        "Result": "NULL",
+    },
 )
 TRACERT_DONE_XML = _diag_xml(
     "OBJ_TRACERT_ID",
@@ -1102,7 +1173,8 @@ def test_ping_returns_error_when_start_fails(api):
     assert "could not start diagnostic" in msg
     # No GET poll against the data endpoint happened.
     assert not [
-        c for c in responses.calls
+        c
+        for c in responses.calls
         if c.request.method == "GET" and c.request.url == data
     ]
 

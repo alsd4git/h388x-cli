@@ -9,9 +9,11 @@ parser to lock down the behaviour we depend on across all the
 import pytest
 
 from h388x_cli.api import ZTEH388XAPI
+from h388x_cli.errors import ParseError
 
 
 # --- _strip_prefix ----------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "name,expected",
@@ -28,11 +30,15 @@ def test_strip_prefix(name, expected):
 
 # --- _is_session_expired ----------------------------------------------------
 
+
 @pytest.mark.parametrize(
     "text,expected",
     [
         ("<root>SessionTimeout</root>", True),
-        ('<ajax_response_xml_root><IF_ERRORID>0</IF_ERRORID></ajax_response_xml_root>', False),
+        (
+            "<ajax_response_xml_root><IF_ERRORID>0</IF_ERRORID></ajax_response_xml_root>",
+            False,
+        ),
         ("", False),
     ],
 )
@@ -110,9 +116,7 @@ def test_parse_multiple_instances():
 def test_parse_empty_root_returns_empty_list():
     """A present-but-empty wrapper element must yield zero rows."""
     xml = (
-        "<ajax_response_xml_root>"
-        "<OBJ_FWURL_ID></OBJ_FWURL_ID>"
-        "</ajax_response_xml_root>"
+        "<ajax_response_xml_root><OBJ_FWURL_ID></OBJ_FWURL_ID></ajax_response_xml_root>"
     )
     assert ZTEH388XAPI._parse_instances(xml, "OBJ_FWURL_ID") == []
 
@@ -122,9 +126,10 @@ def test_parse_unknown_root_returns_empty_list():
     assert ZTEH388XAPI._parse_instances(SIMPLE_XML, "OBJ_DOES_NOT_EXIST") == []
 
 
-def test_parse_malformed_xml_returns_empty_list():
-    """Bad XML must not raise; the API layer logs nothing and returns []."""
-    assert ZTEH388XAPI._parse_instances("not xml at all <<", "OBJ_X") == []
+def test_parse_malformed_xml_raises_parse_error():
+    """Bad XML is a protocol failure, not a legitimate empty collection."""
+    with pytest.raises(ParseError):
+        ZTEH388XAPI._parse_instances("not xml at all <<", "OBJ_X")
 
 
 def test_parse_multi_root_payload():

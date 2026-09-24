@@ -89,15 +89,19 @@ def test_capabilities_json_is_versioned_and_redacts_serial(fake_api, tmp_path):
     }
     report = tmp_path / "endpoints.json"
     report.write_text(
-        json.dumps({
-            "device": {"serial": "SECRET-SERIAL"},
-            "stats": {"endpoint_count": 1, "endpoints_with_data": 1},
-            "endpoints": [{
-                "type": "menuData",
-                "tag": "devmgr_statusmgr_lua.lua",
-                "extras": {},
-            }],
-        }),
+        json.dumps(
+            {
+                "device": {"serial": "SECRET-SERIAL"},
+                "stats": {"endpoint_count": 1, "endpoints_with_data": 1},
+                "endpoints": [
+                    {
+                        "type": "menuData",
+                        "tag": "devmgr_statusmgr_lua.lua",
+                        "extras": {},
+                    }
+                ],
+            }
+        ),
         encoding="utf-8",
     )
 
@@ -105,7 +109,7 @@ def test_capabilities_json_is_versioned_and_redacts_serial(fake_api, tmp_path):
 
     assert result.exit_code == 0, result.stdout
     payload = json.loads(result.stdout)
-    assert payload["schema_version"] == "1"
+    assert payload["schema_version"] == "2"
     assert payload["device"]["software"] == "AGZHM_1.4.4"
     assert payload["discovery"]["stats"]["endpoint_count"] == 1
     assert "SECRET-SERIAL" not in result.stdout
@@ -170,3 +174,35 @@ def test_config_backup_refuses_to_overwrite_existing_file(fake_api, tmp_path):
     assert result.exit_code == 1
     assert json.loads(result.stdout)["ok"] is False
     assert output.read_bytes() == b"keep me"
+
+
+def test_dhcp_reserve_add_json_matches_normalized_mac_readback(fake_api):
+    fake_api.add_dhcp_reservation.return_value = (
+        True,
+        "<IF_ERRORSTR>SUCC</IF_ERRORSTR>",
+    )
+    fake_api.get_dhcp_bindings.return_value = [
+        {
+            "_OBJ_InstID": "DEV.V4DP.Sr.Pl1.Bd1",
+            "Name": "Printer",
+            "IPAddr": "192.168.1.60",
+            "MACAddr": "aa:bb:cc:dd:ee:ff",
+        }
+    ]
+
+    result = runner.invoke(
+        app,
+        [
+            "--json",
+            "dhcp-reserve-add",
+            "AA-BB-CC-DD-EE-FF",
+            "192.168.1.60",
+            "Printer",
+        ],
+    )
+
+    assert result.exit_code == 0, result.stdout
+    payload = json.loads(result.stdout)
+    assert payload["ok"] is True
+    assert len(payload["added"]) == 1
+    assert payload["added"][0]["mac"] == "aa:bb:cc:dd:ee:ff"

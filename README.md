@@ -121,23 +121,65 @@ The machine-readable source used by `capabilities` is kept in
 `h388x_cli/coverage.py`; its output includes `schema_version` so automation
 can reject incompatible formats explicitly.
 
+### Sensitive local output
+
+`discover` reports contain modem identifiers plus samples of authenticated WebUI
+responses; configuration backups can contain credentials or other private modem
+settings. Both commands write new files with private permissions and refuse to
+overwrite an existing path. Conventional names such as `endpoints*.json`,
+`h388x-discovery*.json`, `config-*.bin`, and `h388x-config*.bin` are ignored by
+this repository.
+
+If you choose an arbitrary custom `--output` or backup filename, treat that file
+as sensitive and add an explicit local ignore rule before working with Git. A
+`.gitignore` cannot safely anticipate every custom filename.
+
 ## Installation
 
-Using [uv](https://github.com/astral-sh/uv):
+### Tagged release with uv (recommended)
+
+The repository is currently private, so the clean no-clone installation path uses
+Git over SSH. Configure GitHub SSH access first, then pin the tool to an actual
+release tag:
+
+```bash
+uv tool install "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.1.0"
+```
+
+The first `v0.1.0` tag will be created from `main` after the current hardening PR is
+merged. Until that tag exists, use the development workflow below rather than
+installing an unpinned branch.
+
+For a one-off invocation without keeping a persistent tool environment:
+
+```bash
+uvx --from "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.1.0" h388x --help
+```
+
+`uvx` is an alias for `uv tool run`; both commands create an isolated tool
+environment. The SSH URL deliberately uses the GitHub `git` user, as required for
+private Git repository authentication.
+
+### Local development
+
+```bash
+git clone git@github.com:alsd4git/h388x-cli.git
+cd h388x-cli
+uv sync --locked --dev
+uv run h388x --help
+```
+
+To install the current checkout as a persistent local tool while developing:
 
 ```bash
 uv tool install .
 ```
 
-Or for development:
-
-```bash
-uv sync
-```
+Release creation and versioning are documented in [`RELEASING.md`](RELEASING.md).
 
 ### Shell completion
 
-After installing the `h388x` script (`uv tool install .`), enable
+After installing the `h388x` script as a persistent tool, enable
 tab-completion for your shell:
 
 ```bash
@@ -152,7 +194,7 @@ the generated script instead of installing it, use
 Note: completion is wired to the installed `h388x` entry point. When
 running the CLI through `uv run python -m h388x_cli.cli` (development
 mode) the shell can't detect the program name and completion is not
-available — install with `uv tool install .` for that.
+available — install the release (or current checkout) as a persistent tool for that.
 
 ## Configuration
 

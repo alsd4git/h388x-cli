@@ -67,10 +67,12 @@ Thumbs.db
 firmware/
 
 # Discovery output (contains modem serial, fields, sample HTML/XML)
-endpoints.json
+endpoints*.json
+h388x-discovery*.json
 
 # Sensitive local modem exports
 config-*.bin
+h388x-config*.bin
 
 # Local research tools and checkouts
 tools/

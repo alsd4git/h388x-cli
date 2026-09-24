@@ -9,17 +9,64 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  quality:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.10", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.14"
+          version: latest-known
           enable-cache: true
       - run: uv sync --locked --dev
       - run: uv run ruff check h388x_cli tests
+      - run: uv run ruff format --check h388x_cli tests
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          version: latest-known
+          enable-cache: true
+      - run: uv sync --locked --dev
       - run: uv run pytest
+
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.14"
+          version: latest-known
+          enable-cache: true
+      - run: uv sync --locked --dev
+      - run: uv run --with coverage coverage run -m pytest
+      - run: uv run --with coverage coverage report
+
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: astral-sh/setup-uv@v10.1.0
+        with:
+          python-version: "3.14"
+          version: latest-known
+          enable-cache: true
+      - run: uv sync --locked --dev
+      - run: uv build
+      - name: Install built wheel in a clean environment
+        shell: bash
+        run: |
+          uv venv --python 3.14 .venv-package-smoke
+          wheel="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
+          test -n "$wheel"
+          uv pip install --python .venv-package-smoke/bin/python "$wheel"
+          .venv-package-smoke/bin/h388x --help

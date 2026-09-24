@@ -8,22 +8,34 @@ history.
 
 - Read-only coverage spans WAN, DSL, LAN, DHCP, Wi-Fi, firewall, DNS, IPv6,
   VoIP, UPnP, FTP, DLNA, EasyMesh, mobile WAN, diagnostics, and system status.
-- JSON output is available for automation, with stable schema metadata.
+- JSON output is available for automation, with stable schema metadata and
+  explicit operational error semantics for transport, authentication/session,
+  HTTP/protocol, and parsing failures.
 - `discover --previous` compares endpoint inventories across runs.
-- `capabilities` reports the detected firmware family and coverage summary.
+- `capabilities` reports the detected firmware family plus versioned
+  `schema_version=2` coverage states (`none`, `partial`, `complete`) with
+  observed/missing endpoint evidence.
 - Safe write support includes web-session timeout, port forwarding, DHCP
   reservations, firewall IP/URL rules, DNS servers distributed by DHCP, and
-  device naming through reservations.
-- The test suite runs offline with mocked modem responses.
+  device naming through reservations. Mutating workflows are validation-first
+  and report failed or partially applied bulk operations explicitly.
+- The API/CLI internals are split into transport/runtime and domain modules
+  while keeping the public `ZTEH388XAPI` and CLI command surface stable.
+- The offline test suite is fixture/mocking based. CI covers Python 3.10-3.14,
+  Ruff lint/format, coverage, package build, and clean wheel-install smoke
+  checks.
 
 ## Near-term work
 
-1. Keep the read-only API and JSON schema stable.
-2. Improve error types, exit-code documentation, timeout handling, cache
-   permissions, and coverage reporting in CI.
-3. Add fixtures and HAR-backed implementations for missing Wi-Fi, firewall,
+1. Complete the first `v0.1.0` release from `main` and verify the real tagged
+   install/release-artifact flow.
+2. Keep the read-only API and JSON schemas stable. Add regression tests for
+   meaningful behavior and raise coverage gates only when useful tests justify
+   it.
+3. Add a dedicated DHCP reservation edit CLI and extend the existing
+   validation-first model into declarative snapshot/diff/plan/apply workflows.
+4. Add fixtures and HAR-backed implementations for missing Wi-Fi, firewall,
    DMZ, DHCP, DNS, scheduling, ACL, and service-management writes.
-4. Add declarative snapshot diff and plan/apply workflows.
 5. Document automation patterns for cron, Home Assistant, and similar tools.
 
 ## Higher-risk work
@@ -38,5 +50,7 @@ live validation plan with out-of-band access.
 - Keep new endpoint work read-first and fixture-backed.
 - Record one isolated WebUI change in a HAR before implementing a write.
 - Validate writes on disposable values, then restore the initial modem state.
+- Add tests for real contracts and regressions, not to chase an arbitrary
+  coverage percentage.
 - Never commit credentials, public IPs, modem identifiers, or live endpoint
   URLs.
