@@ -9,7 +9,8 @@ A release tag must point to a commit already merged into `main`. Do not tag a fe
 branch or an unmerged pull request.
 
 1. Update `project.version` in `pyproject.toml`.
-2. Update `CHANGELOG.md` with the release notes.
+2. Move completed entries from `[Unreleased]` into the new version section in
+   `CHANGELOG.md`.
 3. Refresh and verify the lockfile after the version change:
 
    ```bash
@@ -38,17 +39,14 @@ branch or an unmerged pull request.
 
 ## Create the release
 
-For the first release the current package version is `0.1.0`, so after the release commit is
-on `main`:
+Create an annotated tag whose version exactly matches `project.version`, then push it:
 
 ```bash
 git switch main
 git pull --ff-only
-git tag -a v0.1.0 -m "h388x-cli v0.1.0"
-git push origin v0.1.0
+git tag -a vX.Y.Z -m "h388x-cli vX.Y.Z"
+git push origin vX.Y.Z
 ```
-
-For subsequent releases, use the exact `vX.Y.Z` matching `project.version`.
 
 The tag-triggered `Release` workflow deliberately fails before publishing if:
 
@@ -61,10 +59,34 @@ The tag-triggered `Release` workflow deliberately fails before publishing if:
 
 Only after those checks does it create the GitHub Release and attach `dist/*`.
 
+## Verify the published private Release asset
+
+For a private repository, use an authenticated GitHub CLI session to download the
+actual published wheel and test that artifact rather than only the local build. Replace
+`X.Y.Z` in both the tag and filename:
+
+```bash
+gh release download vX.Y.Z -R alsd4git/h388x-cli -p "h388x_cli-X.Y.Z-py3-none-any.whl"
+uvx --from ./h388x_cli-X.Y.Z-py3-none-any.whl h388x --help
+```
+
+To verify the persistent-tool path as well:
+
+```bash
+uv tool install ./h388x_cli-X.Y.Z-py3-none-any.whl
+h388x --help
+```
+
+On Windows, if the install succeeds but the executable is not found, run
+`uv tool update-shell` once and reopen the terminal.
+
+The `v0.1.0` Release completed this full workflow successfully, including a
+download and installation of the actual private Release wheel.
+
 ## Installing a private tagged release with uv
 
-While the repository is private, the clean no-clone path is Git over SSH. The machine must
-already have GitHub SSH access to this repository:
+The shortest no-clone path remains Git over SSH. The machine must already have
+GitHub SSH access to this repository:
 
 ```bash
 uv tool install "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.1.0"

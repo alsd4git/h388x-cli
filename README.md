@@ -138,17 +138,13 @@ as sensitive and add an explicit local ignore rule before working with Git. A
 
 ### Tagged release with uv (recommended)
 
-The repository is currently private, so the clean no-clone installation path uses
-Git over SSH. Configure GitHub SSH access first, then pin the tool to an actual
-release tag:
+The repository is currently private, so the shortest no-clone installation path
+uses Git over SSH. Configure GitHub SSH access first, then pin the tool to an
+actual released tag:
 
 ```bash
 uv tool install "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.1.0"
 ```
-
-The first `v0.1.0` tag will be created from `main` after the current hardening PR is
-merged. Until that tag exists, use the development workflow below rather than
-installing an unpinned branch.
 
 For a one-off invocation without keeping a persistent tool environment:
 
@@ -157,8 +153,31 @@ uvx --from "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.1.0" h388x --help
 ```
 
 `uvx` is an alias for `uv tool run`; both commands create an isolated tool
-environment. The SSH URL deliberately uses the GitHub `git` user, as required for
-private Git repository authentication.
+environment. The SSH URL deliberately uses the GitHub `git` user, as required
+for private Git repository authentication.
+
+### Published GitHub Release asset
+
+The `v0.1.0` Release publishes both a wheel and source distribution. For a
+private repository, the verified asset-install flow uses an authenticated
+GitHub CLI session to download the wheel, then installs that local artifact with
+`uv`:
+
+```bash
+gh release download v0.1.0 -R alsd4git/h388x-cli -p "h388x_cli-0.1.0-py3-none-any.whl"
+uv tool install ./h388x_cli-0.1.0-py3-none-any.whl
+h388x --help
+```
+
+For a one-off check directly from the downloaded wheel:
+
+```bash
+uvx --from ./h388x_cli-0.1.0-py3-none-any.whl h388x --help
+```
+
+On Windows, if `uv tool install` succeeds but `h388x` is not found, run
+`uv tool update-shell` once and reopen the terminal so the uv tool directory
+is added to `PATH`.
 
 ### Local development
 
@@ -358,8 +377,9 @@ Covers:
   auto re-login path on `SessionTimeout`, raw JSON
   (`get_topology`), and the `hiddenData` shortcut (`get_sntp`).
 
-See [`ROADMAP.md`](./ROADMAP.md) for the per-endpoint implementation
-checklist.
+See [`docs/webui-coverage.md`](./docs/webui-coverage.md) for the detailed
+endpoint/command coverage inventory and [`ROADMAP.md`](./ROADMAP.md) for future
+priorities.
 
 ## License
 

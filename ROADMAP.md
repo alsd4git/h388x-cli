@@ -24,19 +24,20 @@ history.
 - The offline test suite is fixture/mocking based. CI covers Python 3.10-3.14,
   Ruff lint/format, coverage, package build, and clean wheel-install smoke
   checks.
+- `v0.1.0` is published as a GitHub Release. The tag, release workflow, wheel,
+  source distribution, and installation from the actual private Release wheel
+  have all been validated end-to-end.
 
 ## Near-term work
 
-1. Complete the first `v0.1.0` release from `main` and verify the real tagged
-   install/release-artifact flow.
-2. Keep the read-only API and JSON schemas stable. Add regression tests for
+1. Keep the read-only API and JSON schemas stable. Add regression tests for
    meaningful behavior and raise coverage gates only when useful tests justify
    it.
-3. Add a dedicated DHCP reservation edit CLI and extend the existing
+2. Add a dedicated DHCP reservation edit CLI and extend the existing
    validation-first model into declarative snapshot/diff/plan/apply workflows.
-4. Add fixtures and HAR-backed implementations for missing Wi-Fi, firewall,
+3. Add fixtures and HAR-backed implementations for missing Wi-Fi, firewall,
    DMZ, DHCP, DNS, scheduling, ACL, and service-management writes.
-5. Document automation patterns for cron, Home Assistant, and similar tools.
+4. Document automation patterns for cron, Home Assistant, and similar tools.
 
 ## Higher-risk work
 

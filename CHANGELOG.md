@@ -6,6 +6,12 @@ The project follows Semantic Versioning-style releases while the command and JSO
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.1.0] - 2026-10-05
+
+Initial tagged development release.
+
 ### Added
 
 - Typed operational error hierarchy for transport, session, protocol and parsing failures.
@@ -13,6 +19,7 @@ The project follows Semantic Versioning-style releases while the command and JSO
 - Regression coverage for bulk preflight/partial failures, HTTP/parser failures, discovery session recovery and watch/logout behavior.
 - Coverage reporting and clean wheel install smoke tests.
 - Tag-driven GitHub Release workflow and an `uv`-first release guide.
+- Published wheel and source distribution attached to the GitHub Release.
 
 ### Changed
 
@@ -25,6 +32,7 @@ The project follows Semantic Versioning-style releases while the command and JSO
 - Generic `watch` propagates child failures by default; `--keep-going` is an explicit opt-in.
 - `logout` can release a valid cached session without requiring the admin password again.
 
-## [0.1.0]
+### Verified
 
-Initial development release. The final `0.1.0` notes will be cut from `[Unreleased]` when the first tag is created from `main`.
+- Release workflow passed Ruff, 240 tests (1 opt-in real-device test skipped), package build, clean Python 3.14 wheel installation, CLI smoke, and metadata/tag checks.
+- The actual private GitHub Release wheel was downloaded with `gh`, installed with `uv tool install`, and the installed `h388x --help` entry point was verified on Windows.
