@@ -68,6 +68,13 @@ def _emit_json(payload: Any) -> None:
     sys.stdout.flush()
 
 
+def configure_output_encoding() -> None:
+    """Escape unencodable characters on legacy terminals and output pipes."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure") and stream.errors == "strict":
+            stream.reconfigure(errors="backslashreplace")
+
+
 def _host_opt() -> str:
     default = os.getenv("H388X_HOST") or os.getenv("H388X_IP", "192.168.1.1")
     return typer.Option(

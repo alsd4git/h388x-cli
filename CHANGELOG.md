@@ -8,6 +8,9 @@ The project follows Semantic Versioning-style releases while the command and JSO
 
 ### Fixed
 
+- Avoid Unicode encoding failures when displaying CLI output on legacy Windows
+  terminals or pipes with limited character sets.
+
 - Require explicit `--yes` for destructive commands in JSON and non-interactive
   mode, before contacting the modem.
 - Protect device reservation exports with private permissions and no-overwrite

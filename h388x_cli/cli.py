@@ -25,6 +25,7 @@ from .cli_runtime import (
     _pwd_opt,
     _user_opt,
     console,
+    configure_output_encoding,
     get_api,
     require_explicit_confirmation,
     state,
@@ -4080,6 +4081,7 @@ def discover(
 
 def run_cli() -> None:
     """Console entry point with stable handling for operational API errors."""
+    configure_output_encoding()
     try:
         app()
     except H388XError as exc:

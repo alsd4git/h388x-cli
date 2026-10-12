@@ -1,5 +1,7 @@
 import json
 import os
+import subprocess
+import sys
 from unittest.mock import MagicMock
 
 import pytest
@@ -9,6 +11,21 @@ from h388x_cli import cli, cli_devices
 
 
 runner = CliRunner()
+
+
+def test_help_runs_with_legacy_output_encoding():
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252:strict"}
+    result = subprocess.run(
+        [sys.executable, "-m", "h388x_cli.cli", "--help"],
+        env=env,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr.decode("cp1252")
+    assert b"Usage:" in result.stdout
+
+
 DELETE_CASES = [
     (
         ["port-forward-del", "1"],
