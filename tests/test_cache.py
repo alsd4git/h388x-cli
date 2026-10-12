@@ -7,6 +7,8 @@ stubbed out.
 """
 
 import json
+import os
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -97,6 +99,79 @@ def test_load_corrupted_cache_is_swallowed(tmp_path):
     # A second instance must come up cleanly even if the file is garbage.
     b = _new_api(tmp_path)
     assert b.session_token is None
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [],
+        None,
+        "invalid",
+        1,
+        {"session_token": 1, "cookies": {"SID": "abc"}},
+        {"session_token": "TOK", "cookies": []},
+        {"session_token": "TOK", "cookies": {"SID": 1}},
+        {"session_token": "TOK", "cookies": {"other": "abc"}},
+        {"session_token": "TOK", "cookies": {"SID": "abc", "other": []}},
+    ],
+)
+def test_load_invalid_cache_shape_leaves_session_unmodified(tmp_path, payload):
+    api = _new_api(tmp_path)
+    api._cache_path().write_text(json.dumps(payload))
+
+    loaded = _new_api(tmp_path)
+
+    assert loaded.session_token is None
+    assert not loaded.session.cookies
+
+
+def test_concurrent_cache_writers_publish_complete_payloads(tmp_path):
+    clients = [_new_api(tmp_path) for _ in range(8)]
+    for index, api in enumerate(clients):
+        api.session_token = f"TOK-{index}"
+        api.session.cookies.set("SID", f"SID-{index}")
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(lambda api: api._save_cache(), clients))
+
+    payload = json.loads(clients[0]._cache_path().read_text())
+    index = payload["session_token"].removeprefix("TOK-")
+    assert payload["cookies"]["SID"] == f"SID-{index}"
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_cache_temporary_file_is_private_before_replacement(tmp_path, monkeypatch):
+    api = _new_api(tmp_path)
+    api.session_token = "TOK"
+    api.session.cookies.set("SID", "abc")
+    replace = os.replace
+
+    def inspect_replace(source, destination):
+        assert os.stat(source).st_mode & 0o777 == 0o600
+        assert json.loads(source.read_text())["session_token"] == "TOK"
+        replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", inspect_replace)
+    api._save_cache()
+    assert api._cache_path().exists()
+
+
+def test_failed_cache_replacement_preserves_previous_file(tmp_path, monkeypatch):
+    api = _new_api(tmp_path)
+    api.session_token = "OLD"
+    api.session.cookies.set("SID", "abc")
+    api._save_cache()
+    previous = api._cache_path().read_bytes()
+
+    def fail_replace(*args):
+        raise OSError("replacement failed")
+
+    monkeypatch.setattr(os, "replace", fail_replace)
+    api.session_token = "NEW"
+    api._save_cache()
+
+    assert api._cache_path().read_bytes() == previous
+    assert not list(tmp_path.glob("*.tmp"))
 
 
 def test_clear_cache_removes_file(tmp_path):

@@ -6,6 +6,7 @@ import hashlib
 import json as _json
 import os
 import re
+import tempfile
 import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -115,9 +116,21 @@ class H388XTransport:
                 data = _json.load(f)
         except (OSError, ValueError):
             return False
+        if not isinstance(data, dict):
+            return False
         token = data.get("session_token")
-        cookies = data.get("cookies") or {}
-        if not token or not cookies:
+        cookies = data.get("cookies")
+        if (
+            not isinstance(token, str)
+            or not token
+            or not isinstance(cookies, dict)
+            or not isinstance(cookies.get("SID"), str)
+            or not cookies["SID"]
+            or any(
+                not isinstance(name, str) or not name or not isinstance(value, str)
+                for name, value in cookies.items()
+            )
+        ):
             return False
         self.session_token = token
         # Set the restored cookies pinned to the modem host. Without an
@@ -140,7 +153,7 @@ class H388XTransport:
         if "SID" not in cookies:
             return
         try:
-            self._cache_dir.mkdir(parents=True, exist_ok=True)
+            self._cache_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
         except OSError:
             return
         path = self._cache_path()
@@ -150,20 +163,31 @@ class H388XTransport:
             "session_token": self.session_token,
             "cookies": cookies,
         }
-        tmp = path.with_suffix(".tmp")
+        tmp = None
         try:
-            with tmp.open("w") as f:
+            # Each writer owns a separate 0600 temporary file. Readers see
+            # either the old complete cache or the new complete cache.
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=self._cache_dir,
+                prefix=f"{path.stem}-",
+                suffix=".tmp",
+                delete=False,
+            ) as f:
+                tmp = Path(f.name)
                 _json.dump(payload, f)
-            try:
-                os.chmod(tmp, 0o600)
-            except OSError:
-                pass
+                f.flush()
+                os.fsync(f.fileno())
             os.replace(tmp, path)
         except OSError:
-            try:
-                tmp.unlink(missing_ok=True)
-            except OSError:
-                pass
+            pass
+        finally:
+            if tmp is not None:
+                try:
+                    tmp.unlink(missing_ok=True)
+                except OSError:
+                    pass
 
     def _clear_cache(self) -> None:
         """Remove the on-disk cache for this (host, user) pair, if any."""
