@@ -52,7 +52,11 @@ jobs:
       - run: uv run --with coverage coverage report
 
   package:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v7.0.1
       - uses: astral-sh/setup-uv@v10.1.0
@@ -66,7 +70,14 @@ jobs:
         shell: bash
         run: |
           uv venv --python 3.14 .venv-package-smoke
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            python=".venv-package-smoke/Scripts/python.exe"
+            executable=".venv-package-smoke/Scripts/h388x.exe"
+          else
+            python=".venv-package-smoke/bin/python"
+            executable=".venv-package-smoke/bin/h388x"
+          fi
           wheel="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
           test -n "$wheel"
-          uv pip install --python .venv-package-smoke/bin/python "$wheel"
-          .venv-package-smoke/bin/h388x --help
+          uv pip install --python "$python" "$wheel"
+          "$executable" --help
