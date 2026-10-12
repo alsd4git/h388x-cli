@@ -8,6 +8,11 @@ The project follows Semantic Versioning-style releases while the command and JSO
 
 ### Fixed
 
+- Keep authentication, unexpected empty-response and write-precondition errors
+  machine-readable in JSON mode.
+- Preserve typed operational failure codes during device imports without
+  exposing raw exception messages.
+
 - Avoid Unicode encoding failures when displaying CLI output on legacy Windows
   terminals or pipes with limited character sets.
 

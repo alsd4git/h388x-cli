@@ -20,6 +20,12 @@ A syntactically valid response with no matching instances remains a normal empty
 Write operations keep their existing `(ok, body)` return contract so callers are not
 forced through an incompatible API change.
 
+Bulk device failures include `error_type` and a safe `error` summary. Typed
+exceptions retain their public code, such as `transport_error` or
+`session_expired`, without including the exception text. A modem rejection
+uses `error_type=modem_rejected` and preserves the numeric `IF_ERRORID` when
+available. Partial-application counts and skipped remaining writes are unchanged.
+
 ## CLI exit codes
 
 The installed `h388x` entry point converts `H388XError` exceptions into one concise
@@ -33,6 +39,11 @@ human-readable error, or a structured JSON error when `--json` is enabled.
 Scripts should use the exit status for success/failure and, when applicable, `--json`
 for machine-readable details. They should not interpret an empty table as evidence that
 the modem request itself succeeded unless the command exits with status `0`.
+
+Missing passwords and rejected logins also produce JSON errors with
+`error.type=authentication_error`. Unexpected empty identity, DSL, WAN or
+Wi-Fi responses use `empty_response`. Missing required write inputs use
+`validation_error`; these command-level failures retain exit code 1.
 
 ## Destructive commands and modem errors
 
