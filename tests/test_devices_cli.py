@@ -79,6 +79,7 @@ def test_devices_import_json_partial_write_failure_is_not_success(
     assert payload["summary"]["failed"] == 1
     assert payload["summary"]["skipped"] == 1
     assert payload["summary"]["partial"] is True
+    assert payload["plan"][1]["error_type"] == "modem_rejected"
     assert len(api.calls) == 2
     assert payload["plan"][2]["skipped"] == "previous write failed"
     assert api.closed is True
@@ -156,7 +157,7 @@ class _PartialReadFailureApi(_FakeApi):
 
     def edit_dhcp_reservation(self, reservation_id, *, name, ip_address):
         self.calls.append(("edit", reservation_id, ip_address, name))
-        raise TransportError("binding refresh failed")
+        raise TransportError("binding refresh failed: private-token")
 
 
 def test_devices_import_reports_partial_state_when_write_raises_typed_error(
@@ -187,7 +188,9 @@ def test_devices_import_reports_partial_state_when_write_raises_typed_error(
     }
     assert payload["plan"][0]["ok"] is True
     assert payload["plan"][1]["ok"] is False
-    assert payload["plan"][1]["error"] == "Modem rejected the operation."
+    assert payload["plan"][1]["error_type"] == "transport_error"
+    assert payload["plan"][1]["error"] == "Operation failed (transport_error)."
+    assert "private-token" not in result.stdout
     assert payload["plan"][2]["skipped"] == "previous write failed"
     assert len(api.calls) == 2
     assert api.closed is True

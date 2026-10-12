@@ -263,6 +263,8 @@ def apply_import_plan(
             skipped += 1
             continue
 
+        error_type = "modem_rejected"
+        error_message = None
         try:
             if action == "add":
                 ok, body = api.add_dhcp_reservation(
@@ -273,14 +275,17 @@ def apply_import_plan(
                     item["id"], name=item["name"], ip_address=item["ip"]
                 )
         except H388XError as exc:
-            ok, body = False, f"{exc.code}: {exc}"
+            ok, body = False, ""
+            error_type = exc.code
+            error_message = f"Operation failed ({exc.code})."
 
         item["ok"] = bool(ok)
         if ok:
             applied += 1
             continue
 
-        item["error"] = safe_modem_error(body)
+        item["error"] = error_message or safe_modem_error(body)
+        item["error_type"] = error_type
         failed += 1
         failure_seen = True
 
