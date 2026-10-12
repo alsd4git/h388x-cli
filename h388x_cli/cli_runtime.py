@@ -47,12 +47,23 @@ def require_explicit_confirmation(yes: bool) -> None:
     if yes or (not state.json and sys.stdin.isatty()):
         return
     message = "This operation requires --yes in JSON or non-interactive mode."
+    fail_cli(message, "confirmation_required")
+
+
+def _emit_json(payload: Any) -> None:
+    json.dump(payload, sys.stdout, indent=2, default=str)
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+
+
+def fail_cli(message: str, error_type: str) -> None:
+    """Report a command failure in the selected output format and exit."""
     if state.json:
         _emit_json(
             {
                 "ok": False,
                 "error": {
-                    "type": "confirmation_required",
+                    "type": error_type,
                     "message": message,
                 },
             }
@@ -60,12 +71,6 @@ def require_explicit_confirmation(yes: bool) -> None:
     else:
         console.print(message, style="red", markup=False)
     raise typer.Exit(code=1)
-
-
-def _emit_json(payload: Any) -> None:
-    json.dump(payload, sys.stdout, indent=2, default=str)
-    sys.stdout.write("\n")
-    sys.stdout.flush()
 
 
 def configure_output_encoding() -> None:
@@ -115,11 +120,10 @@ def get_api(
 ) -> ZTEH388XAPI:
     password = password or os.getenv("H388X_PASSWORD", "")
     if not password:
-        console.print(
-            "[red]Error: Password is required. "
-            "Set H388X_PASSWORD in .env or use --password.[/red]"
+        fail_cli(
+            "Password is required. Set H388X_PASSWORD in config.env, .env or use --password.",
+            "authentication_error",
         )
-        raise typer.Exit(code=1)
 
     if insecure:
         try:
@@ -141,9 +145,9 @@ def get_api(
         with console.status("[bold green]Connecting to modem..."):
             ok = api.login()
     if not ok:
-        console.print(
-            "[red]Login failed. Check credentials, IP and that no other "
-            "admin session is open in a browser.[/red]"
+        api.session.close()
+        fail_cli(
+            "Login failed. Check credentials, host and active admin sessions.",
+            "authentication_error",
         )
-        raise typer.Exit(code=1)
     return api

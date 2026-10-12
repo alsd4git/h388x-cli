@@ -27,6 +27,7 @@ from .cli_runtime import (
     console,
     configure_output_encoding,
     get_api,
+    fail_cli,
     require_explicit_confirmation,
     state,
 )
@@ -196,8 +197,7 @@ def stats(
         if watch is None:
             raw = api.get_dsl_stats()
             if not raw:
-                console.print("[red]No DSL stats returned.[/red]")
-                raise typer.Exit(code=1)
+                fail_cli("No DSL stats returned.", "empty_response")
             s = DSLStats.model_validate(raw)
             if state.json:
                 _emit_json(s.model_dump())
@@ -211,11 +211,12 @@ def stats(
             try:
                 while True:
                     raw = api.get_dsl_stats()
-                    if raw:
-                        sys.stdout.write(
-                            json.dumps(DSLStats.model_validate(raw).model_dump()) + "\n"
-                        )
-                        sys.stdout.flush()
+                    if not raw:
+                        fail_cli("No DSL stats returned.", "empty_response")
+                    sys.stdout.write(
+                        json.dumps(DSLStats.model_validate(raw).model_dump()) + "\n"
+                    )
+                    sys.stdout.flush()
                     time.sleep(watch)
             except KeyboardInterrupt:
                 return
@@ -224,8 +225,9 @@ def stats(
             try:
                 while True:
                     raw = api.get_dsl_stats()
-                    if raw:
-                        live.update(_stats_table(DSLStats.model_validate(raw)))
+                    if not raw:
+                        fail_cli("No DSL stats returned.", "empty_response")
+                    live.update(_stats_table(DSLStats.model_validate(raw)))
                     time.sleep(watch)
             except KeyboardInterrupt:
                 return
@@ -248,8 +250,7 @@ def info(
     try:
         raw = api.get_device_info()
         if not raw:
-            console.print("[red]No device info returned.[/red]")
-            raise typer.Exit(code=1)
+            fail_cli("No device info returned.", "empty_response")
         d = DeviceInfo.model_validate(raw)
         if state.json:
             _emit_json(d.model_dump())
@@ -290,8 +291,7 @@ def wan(
     try:
         raw_list = api.get_wan_connections()
         if not raw_list:
-            console.print("[red]No WAN data returned.[/red]")
-            raise typer.Exit(code=1)
+            fail_cli("No WAN data returned.", "empty_response")
 
         conns = [WanConnection.model_validate(r) for r in raw_list]
         if not all_:
@@ -444,6 +444,9 @@ def wifi(
         radios = [WifiRadio.model_validate(r) for r in radios_raw]
         aps = [WifiAP.model_validate(r) for r in aps_raw]
 
+        if not radios and not aps:
+            fail_cli("No Wi-Fi data returned.", "empty_response")
+
         if state.json:
             _emit_json(
                 {
@@ -452,10 +455,6 @@ def wifi(
                 }
             )
             return
-
-        if not radios and not aps:
-            console.print("[red]No Wi-Fi data returned.[/red]")
-            raise typer.Exit(code=1)
 
         radios_table = Table(title="Wi-Fi radios")
         radios_table.add_column("ID", style="dim")
@@ -924,8 +923,7 @@ def port_forward_edit(
             enable,
         )
     ):
-        console.print("[yellow]Nothing to change (pass at least one field).[/yellow]")
-        raise typer.Exit(code=1)
+        fail_cli("Nothing to change (pass at least one field).", "validation_error")
 
     api = get_api(host, user, password, insecure)
     try:
@@ -1065,8 +1063,7 @@ def dns_set(
     IP/pool/lease settings are preserved (read-modify-write).
     """
     if not from_wan and not dns1:
-        console.print("[red]Provide DNS1, or use --from-wan.[/red]")
-        raise typer.Exit(code=1)
+        fail_cli("Provide DNS1, or use --from-wan.", "validation_error")
     api = get_api(host, user, password, insecure)
     try:
         before = api.get_dhcp_config()
