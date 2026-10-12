@@ -6,16 +6,28 @@ The project follows Semantic Versioning-style releases while the command and JSO
 
 ## [Unreleased]
 
+No unreleased changes yet.
+
+## [0.2.0] - 2026-10-13
+
+### Migration notes
+
+- JSON and non-interactive scripts must pass `--yes` for delete commands,
+  `devices clear` and `reboot`.
+- Failed writes expose `error` instead of `raw`. Failed bulk items also expose
+  `error_type`; raw modem responses and exception messages are not printed.
+- File exports refuse to replace an existing path. Choose a new filename.
+- CLI configuration precedence is process environment, current directory
+  `.env`, then the user's `h388x-cli/config.env` under the configuration directory.
+
 ### Fixed
 
 - Keep authentication, unexpected empty-response and write-precondition errors
   machine-readable in JSON mode.
 - Preserve typed operational failure codes during device imports without
   exposing raw exception messages.
-
 - Avoid Unicode encoding failures when displaying CLI output on legacy Windows
   terminals or pipes with limited character sets.
-
 - Require explicit `--yes` for destructive commands in JSON and non-interactive
   mode, before contacting the modem.
 - Protect device reservation exports with private permissions and no-overwrite
@@ -24,7 +36,6 @@ The project follows Semantic Versioning-style releases while the command and JSO
   paths while preserving process environment overrides.
 - Replace raw write-error responses with token-free summaries and numeric modem
   error IDs, including bulk device failures.
-
 - Ignore session caches with invalid JSON structures or invalid token/cookie types.
 - Write session caches through unique private temporary files and replace them
   atomically, preserving the previous cache when replacement fails.
@@ -34,7 +45,6 @@ The project follows Semantic Versioning-style releases while the command and JSO
 - Verify that release tags point to commits on `main` before publishing.
 - Run package install/entry-point smoke checks on Windows and macOS as well as
   Linux.
-
 - Public HTTPS installation examples, contribution guidelines, a security
   reporting policy and redaction prompts in issue templates.
 - GitHub remote and repository protection guidance for releases and publication.

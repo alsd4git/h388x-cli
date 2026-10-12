@@ -55,6 +55,9 @@ clone whose `origin` is GitHub, use `origin` in the commands above.
 Confirm the GitHub Actions checks for the release commit passed before pushing
 the tag.
 
+The pre-release audit and verification record for `v0.2.0` is in
+[`docs/release-validation.md`](docs/release-validation.md).
+
 ## Public repository setup
 
 Before changing repository visibility, merge the publication fixes and verify
@@ -111,13 +114,13 @@ The shortest no-clone path remains Git over SSH. The machine must already have
 GitHub SSH access to this repository:
 
 ```bash
-uv tool install "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.1.0"
+uv tool install "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.2.0"
 ```
 
 For a one-off invocation without a persistent tool install:
 
 ```bash
-uvx --from "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.1.0" h388x --help
+uvx --from "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.2.0" h388x --help
 ```
 
 Use an existing released tag; do not use an unpinned branch as the recommended install path.
