@@ -5,17 +5,32 @@ from __future__ import annotations
 import json
 import os
 import sys
+from pathlib import Path
 from typing import Any, Optional
 
 import typer
-from dotenv import load_dotenv
+from dotenv import dotenv_values
 from rich.console import Console
 
 from .api import ZTEH388XAPI
 
-# Loading a project .env is intentionally a CLI concern. Importing the API
-# package alone no longer causes environment/config discovery side effects.
-load_dotenv()
+# Configuration is intentionally loaded by the CLI before its option defaults
+# are constructed. Explicit paths avoid searching parent directories, and
+# preserve the original process environment while allowing the cwd file to
+# override the user config file.
+_process_environment = os.environ.copy()
+_xdg_config_home = os.getenv("XDG_CONFIG_HOME")
+_user_config_dir = (
+    Path(_xdg_config_home).expanduser() if _xdg_config_home else Path.home() / ".config"
+)
+for _config_path in (
+    _user_config_dir / "h388x-cli" / "config.env",
+    Path.cwd() / ".env",
+):
+    if _config_path.is_file():
+        for _key, _value in dotenv_values(_config_path).items():
+            if _value is not None and _key not in _process_environment:
+                os.environ[_key] = _value
 
 console = Console()
 
@@ -25,6 +40,26 @@ class State:
 
 
 state = State()
+
+
+def require_explicit_confirmation(yes: bool) -> None:
+    """Require --yes when a destructive operation cannot prompt safely."""
+    if yes or (not state.json and sys.stdin.isatty()):
+        return
+    message = "This operation requires --yes in JSON or non-interactive mode."
+    if state.json:
+        _emit_json(
+            {
+                "ok": False,
+                "error": {
+                    "type": "confirmation_required",
+                    "message": message,
+                },
+            }
+        )
+    else:
+        console.print(message, style="red", markup=False)
+    raise typer.Exit(code=1)
 
 
 def _emit_json(payload: Any) -> None:
