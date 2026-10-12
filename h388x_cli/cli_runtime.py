@@ -71,7 +71,7 @@ def _emit_json(payload: Any) -> None:
 def configure_output_encoding() -> None:
     """Escape unencodable characters on legacy terminals and output pipes."""
     for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure") and stream.errors == "strict":
+        if hasattr(stream, "reconfigure"):
             stream.reconfigure(errors="backslashreplace")
 
 

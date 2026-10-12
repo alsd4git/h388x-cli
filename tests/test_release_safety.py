@@ -13,8 +13,9 @@ from h388x_cli import cli, cli_devices
 runner = CliRunner()
 
 
-def test_help_runs_with_legacy_output_encoding():
-    env = {**os.environ, "PYTHONIOENCODING": "cp1252:strict"}
+@pytest.mark.parametrize("errors", ["strict", "surrogateescape"])
+def test_help_runs_with_legacy_output_encoding(errors):
+    env = {**os.environ, "PYTHONIOENCODING": f"cp1252:{errors}"}
     result = subprocess.run(
         [sys.executable, "-m", "h388x_cli.cli", "--help"],
         env=env,
