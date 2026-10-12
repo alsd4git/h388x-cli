@@ -33,3 +33,16 @@ human-readable error, or a structured JSON error when `--json` is enabled.
 Scripts should use the exit status for success/failure and, when applicable, `--json`
 for machine-readable details. They should not interpret an empty table as evidence that
 the modem request itself succeeded unless the command exits with status `0`.
+
+## Destructive commands and modem errors
+
+Delete commands, `devices clear` and `reboot` require `--yes` in JSON or
+non-interactive mode. Without it they exit with code 1 before contacting the
+modem. JSON errors use `error.type=confirmation_required`. In an interactive
+terminal, the usual confirmation prompt remains available.
+
+Failed writes expose an `error` summary and the numeric `IF_ERRORID` when
+present. Raw response bodies are no longer printed or included under `raw`,
+including failures in bulk device imports. This prevents response tokens and
+credentials from entering logs. The Python write API still returns `(ok, body)`;
+callers doing protocol research must redact that body before sharing it.

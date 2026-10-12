@@ -8,11 +8,24 @@ The project follows Semantic Versioning-style releases while the command and JSO
 
 ### Fixed
 
+- Require explicit `--yes` for destructive commands in JSON and non-interactive
+  mode, before contacting the modem.
+- Protect device reservation exports with private permissions and no-overwrite
+  semantics.
+- Load user configuration and the current directory's `.env` using explicit
+  paths while preserving process environment overrides.
+- Replace raw write-error responses with token-free summaries and numeric modem
+  error IDs, including bulk device failures.
+
 - Ignore session caches with invalid JSON structures or invalid token/cookie types.
 - Write session caches through unique private temporary files and replace them
   atomically, preserving the previous cache when replacement fails.
 
 ### Added
+
+- Verify that release tags point to commits on `main` before publishing.
+- Run package install/entry-point smoke checks on Windows and macOS as well as
+  Linux.
 
 - Public HTTPS installation examples, contribution guidelines, a security
   reporting policy and redaction prompts in issue templates.

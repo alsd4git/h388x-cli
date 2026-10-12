@@ -123,6 +123,15 @@ can reject incompatible formats explicitly.
 
 ### Sensitive local output
 
+`devices export FILE` creates a private file and refuses to overwrite an
+existing path. Its JSON success response identifies the output file. Omitting
+FILE still writes the reservation array to stdout.
+
+Delete commands, `devices clear` and `reboot` require `--yes` when using
+`--json` or non-interactive input. JSON changes output formatting only; it
+does not authorize a destructive operation. See
+[error handling](./docs/error-handling.md) for failure semantics.
+
 `discover` reports contain modem identifiers plus samples of authenticated WebUI
 responses; configuration backups can contain credentials or other private modem
 settings. Both commands write new files with private permissions and refuse to
@@ -233,7 +242,16 @@ available — install the release (or current checkout) as a persistent tool for
 
 ## Configuration
 
-Create a `.env` file (see [`.env.example`](./.env.example)) at the project root:
+The CLI loads configuration in this order (higher entries take precedence):
+
+1. Process environment variables.
+2. A `.env` file in the current working directory.
+3. `$XDG_CONFIG_HOME/h388x-cli/config.env`, or
+   `~/.config/h388x-cli/config.env` when `XDG_CONFIG_HOME` is unset or empty.
+
+Paths are explicit: the CLI does not search parent directories for `.env` files.
+For a project-local setup, create `.env` in the directory where you run the CLI
+(see [`.env.example`](./.env.example)):
 
 ```env
 H388X_PASSWORD=your_admin_password_here
