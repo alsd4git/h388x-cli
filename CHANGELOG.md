@@ -6,7 +6,17 @@ The project follows Semantic Versioning-style releases while the command and JSO
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Fixed
+
+- Ignore session caches with invalid JSON structures or invalid token/cookie types.
+- Write session caches through unique private temporary files and replace them
+  atomically, preserving the previous cache when replacement fails.
+
+### Added
+
+- Public HTTPS installation examples, contribution guidelines, a security
+  reporting policy and redaction prompts in issue templates.
+- GitHub remote and repository protection guidance for releases and publication.
 
 ## [0.1.0] - 2026-10-05
 

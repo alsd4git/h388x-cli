@@ -43,10 +43,32 @@ Create an annotated tag whose version exactly matches `project.version`, then pu
 
 ```bash
 git switch main
-git pull --ff-only
+git pull --ff-only github main
 git tag -a vX.Y.Z -m "h388x-cli vX.Y.Z"
-git push origin vX.Y.Z
+git push github vX.Y.Z
 ```
+
+In the maintainer checkout, `github` points to GitHub and `origin` points to
+the personal Git mirror. Check `git remote -v` before tagging. For a fresh
+clone whose `origin` is GitHub, use `origin` in the commands above.
+
+Confirm the GitHub Actions checks for the release commit passed before pushing
+the tag.
+
+## Public repository setup
+
+Before changing repository visibility, merge the publication fixes and verify
+the release artifacts. After publication:
+
+- Enable private vulnerability reporting under GitHub security settings.
+- Protect `main` with a ruleset requiring pull requests and the quality, test,
+  coverage and package checks. Prevent force pushes and branch deletion.
+- Verify the HTTPS tag and direct-wheel install examples in README from a
+  clean environment without repository credentials.
+- Update README to make HTTPS installation the default and retain SSH as an
+  authenticated alternative.
+
+Keep PyPI publishing separate until its release workflow is configured.
 
 The tag-triggered `Release` workflow deliberately fails before publishing if:
 
