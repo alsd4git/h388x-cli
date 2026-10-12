@@ -187,7 +187,7 @@ def test_devices_import_reports_partial_state_when_write_raises_typed_error(
     }
     assert payload["plan"][0]["ok"] is True
     assert payload["plan"][1]["ok"] is False
-    assert "transport_error" in payload["plan"][1]["raw"]
+    assert payload["plan"][1]["error"] == "Modem rejected the operation."
     assert payload["plan"][2]["skipped"] == "previous write failed"
     assert len(api.calls) == 2
     assert api.closed is True

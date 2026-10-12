@@ -2,6 +2,16 @@
 
 from __future__ import annotations
 
+import re
+
+
+def safe_modem_error(body: str) -> str:
+    """Expose only the numeric modem error ID, never response contents."""
+    match = re.search(r"<IF_ERRORID>\s*(-?\d+)\s*</IF_ERRORID>", str(body))
+    if match:
+        return f"Modem rejected the operation (IF_ERRORID={match.group(1)})."
+    return "Modem rejected the operation."
+
 
 class H388XError(RuntimeError):
     """Base class for operational errors that callers can handle explicitly."""

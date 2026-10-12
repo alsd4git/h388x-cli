@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import List, Optional
 
 import typer
@@ -17,6 +18,7 @@ from .cli_runtime import (
     _user_opt,
     console,
     get_api,
+    require_explicit_confirmation,
     state,
 )
 from .devices import (
@@ -27,6 +29,8 @@ from .devices import (
     reservations_export as _reservations_export,
 )
 from .models import Client, DhcpBinding
+from .errors import safe_modem_error
+from .private_files import write_private_bytes
 
 # -------------------------------------------------------------------- devices
 
@@ -122,9 +126,19 @@ def devices_export(
         api.close()
 
     if file:
-        with open(file, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2)
-            fh.write("\n")
+        try:
+            write_private_bytes(
+                Path(file), (json.dumps(data, indent=2) + "\n").encode("utf-8")
+            )
+        except OSError as exc:
+            message = f"Cannot create export {file!r}: {exc}"
+            if state.json:
+                _emit_json({"ok": False, "error": message})
+            else:
+                console.print(message, style="red", markup=False)
+            raise typer.Exit(code=1)
+        if state.json:
+            _emit_json({"ok": True, "file": file, "reservations": len(data)})
         if not state.json:
             console.print(
                 f"[green]Exported[/green] {len(data)} reservation(s) to "
@@ -225,7 +239,7 @@ def devices_import(
             elif not dry_run and "ok" in item and not item["ok"]:
                 action = f"{action} FAILED"
                 color = "red"
-                detail = item.get("raw", detail)
+                detail = item.get("error", detail)
             table.add_row(
                 f"[{color}]{action}[/{color}]",
                 item["name"] or "-",
@@ -337,10 +351,10 @@ def devices_set(
 
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Set failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Set failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
 
@@ -379,6 +393,7 @@ def devices_clear(
     insecure: bool = _insecure_opt(),
 ):
     """Remove the DHCP reservation (and its name) for a device by MAC."""
+    require_explicit_confirmation(yes)
     key = _norm_mac(mac)
     api = get_api(host, user, password, insecure)
     try:
@@ -413,10 +428,10 @@ def devices_clear(
         ok, body = api.del_dhcp_reservation(existing.id)
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Clear failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Clear failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
         if state.json:
@@ -544,7 +559,7 @@ def devices_edit(
 
             remaining = len(actions) - index - 1
             console.print(
-                f"[red]{kind} FAILED[/red] for {label}: [dim]{body[:200]}[/dim]"
+                f"[red]{kind} FAILED[/red] for {label}: [dim]{safe_modem_error(body)}[/dim]"
             )
             console.print(
                 f"[red]Stopped after failure: applied={applied}, failed=1, "

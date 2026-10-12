@@ -7,6 +7,7 @@ import time
 from typing import Any, Dict, List, Tuple
 
 import requests
+from .errors import safe_modem_error
 
 
 class SystemMixin:
@@ -167,7 +168,7 @@ class SystemMixin:
             fields=fields,
         )
         if not ok:
-            return False, f"could not start diagnostic: {body[:200]}"
+            return False, f"could not start diagnostic: {safe_modem_error(body)}"
 
         deadline = time.monotonic() + max_wait
         while time.monotonic() < deadline:

@@ -6,7 +6,7 @@ import ipaddress
 import re
 from typing import Any, Dict, List, Optional
 
-from .errors import H388XError
+from .errors import H388XError, safe_modem_error
 from .models import Client, DhcpBinding
 
 
@@ -280,7 +280,7 @@ def apply_import_plan(
             applied += 1
             continue
 
-        item["raw"] = str(body)[:200]
+        item["error"] = safe_modem_error(body)
         failed += 1
         failure_seen = True
 

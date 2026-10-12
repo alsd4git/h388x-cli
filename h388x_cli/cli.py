@@ -26,12 +26,13 @@ from .cli_runtime import (
     _user_opt,
     console,
     get_api,
+    require_explicit_confirmation,
     state,
 )
 
 
 from .discovery import Spider
-from .errors import H388XError
+from .errors import H388XError, safe_modem_error
 from .discovery import compare_discovery_reports
 from .coverage import build_capabilities, load_discovery_report
 from .private_files import write_private_bytes as _write_private_bytes
@@ -678,10 +679,10 @@ def port_forward_add(
         )
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Add failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Add failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
 
@@ -737,6 +738,7 @@ def port_forward_del(
     insecure: bool = _insecure_opt(),
 ):
     """Delete a port-forwarding rule by ID."""
+    require_explicit_confirmation(yes)
     inst_id = (
         rule_id
         if rule_id.startswith("DEV.NAT.PtMapping")
@@ -768,10 +770,10 @@ def port_forward_del(
         ok, body = api.del_port_forwarding_rule(inst_id)
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Delete failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Delete failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
         if state.json:
@@ -842,10 +844,10 @@ def port_forward_toggle(
         ok, body = api.set_port_forwarding_enabled(inst_id, new_state)
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Toggle failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Toggle failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
         if state.json:
@@ -940,10 +942,10 @@ def port_forward_edit(
         )
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Edit failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Edit failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
 
@@ -1070,10 +1072,10 @@ def dns_set(
         ok, body = api.set_dhcp_dns(dns1=dns1, dns2=dns2, from_wan=from_wan)
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Set failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Set failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
         after = api.get_dhcp_config()
@@ -1450,10 +1452,10 @@ def dhcp_reserve_add(
         )
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Add failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Add failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
 
@@ -1513,6 +1515,7 @@ def dhcp_reserve_del(
     insecure: bool = _insecure_opt(),
 ):
     """Delete a DHCPv4 reservation by ID."""
+    require_explicit_confirmation(yes)
     inst_id = (
         binding_id
         if binding_id.startswith(_DHCP_BIND_ID_PREFIX)
@@ -1545,10 +1548,10 @@ def dhcp_reserve_del(
         ok, body = api.del_dhcp_reservation(inst_id)
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Delete failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Delete failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
         if state.json:
@@ -2681,10 +2684,10 @@ def firewall_urlfilter_add(
         ok, body = api.add_url_filter_rule(name=name, url=url)
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Add failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Add failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
 
@@ -2727,6 +2730,7 @@ def firewall_urlfilter_del(
     insecure: bool = _insecure_opt(),
 ):
     """Delete a URL-filter rule by ID."""
+    require_explicit_confirmation(yes)
     inst_id = (
         rule_id
         if rule_id.startswith(_FWURL_ID_PREFIX)
@@ -2757,10 +2761,10 @@ def firewall_urlfilter_del(
         ok, body = api.del_url_filter_rule(inst_id)
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Delete failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Delete failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
         if state.json:
@@ -2839,10 +2843,10 @@ def firewall_ipfilter_add(
         )
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Add failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Add failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
 
@@ -2887,6 +2891,7 @@ def firewall_ipfilter_del(
     insecure: bool = _insecure_opt(),
 ):
     """Delete an IP-filter rule by ID."""
+    require_explicit_confirmation(yes)
     inst_id = (
         rule_id
         if rule_id.startswith(_FWIP_ID_PREFIX)
@@ -2918,10 +2923,10 @@ def firewall_ipfilter_del(
         ok, body = api.del_ip_filter_rule(inst_id)
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Delete failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Delete failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
         if state.json:
@@ -2992,10 +2997,10 @@ def firewall_ipfilter_toggle(
         ok, body = api.set_ip_filter_enabled(inst_id, new_state)
         if not ok:
             if state.json:
-                _emit_json({"ok": False, "raw": body[:400]})
+                _emit_json({"ok": False, "error": safe_modem_error(body)})
             else:
                 console.print(
-                    f"[red]Toggle failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Toggle failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
             raise typer.Exit(code=1)
         if state.json:
@@ -3190,10 +3195,10 @@ def web_timeout(
             ok, body = api.set_web_login_timeout(set_minutes)
             if not ok:
                 if state.json:
-                    _emit_json({"ok": False, "raw": body[:400]})
+                    _emit_json({"ok": False, "error": safe_modem_error(body)})
                     raise typer.Exit(code=1)
                 console.print(
-                    f"[red]Set failed.[/red] Modem replied:\n[dim]{body[:400]}[/dim]"
+                    f"[red]Set failed.[/red] Modem replied:\n[dim]{safe_modem_error(body)}[/dim]"
                 )
                 raise typer.Exit(code=1)
             # Read back to confirm and surface the actual stored value.
@@ -3626,6 +3631,7 @@ def reboot(
     yes: bool = typer.Option(False, "--yes", "-y", help="Skip confirmation"),
 ):
     """Reboot the modem."""
+    require_explicit_confirmation(yes)
     if not yes and not typer.confirm("Are you sure you want to reboot the modem?"):
         raise typer.Abort()
     api = get_api(host, user, password, insecure)
