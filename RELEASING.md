@@ -59,8 +59,10 @@ the tag.
 
 The public repository requires pull requests, an up-to-date branch, resolved
 review conversations and all ten CI checks before squash merging to `main`.
-The protection applies to administrators and blocks force pushes and branch
-deletion. Private vulnerability reporting is the primary security contact.
+Administrators may bypass pull requests and pre-merge checks to push directly;
+CI still runs after each push. A separate ruleset with no bypass blocks force
+pushes, deletion and merge commits on `main`, including for administrators.
+Private vulnerability reporting is the primary security contact.
 
 For each release, verify the HTTPS tag and direct-wheel installation examples
 in README from a clean environment without repository credentials.

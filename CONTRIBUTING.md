@@ -21,15 +21,21 @@ failure cases. Keep changes scoped and use Conventional Commits.
 
 ## Pull requests
 
-Open a pull request against `main`; direct pushes are blocked, including for
-administrators. Keep your branch up to date with `main`, preferably by rebasing,
+Open a pull request against `main`; direct pushes are blocked for contributors.
+Keep your branch up to date with `main`, preferably by rebasing,
 and resolve review conversations before merging. All ten CI checks must pass
 against an up-to-date branch. Only squash merges are enabled; use a descriptive
 Conventional Commit pull request title for the resulting commit.
 
 An approval from another person is not mandatory while the project has a single
 maintainer. Merged branches are deleted automatically. Force pushes and deletion
-of `main` are blocked.
+of `main` are blocked for everyone, including administrators. Merge commits
+cannot be pushed to `main`.
+
+Repository administrators may push directly to `main` without a pull request
+or pre-push CI approval. CI still runs after every push; check its results and
+fix failures promptly. Prefer pull requests for changes that benefit from
+pre-merge validation or review.
 
 ## New endpoints and writes
 
