@@ -6,6 +6,12 @@ The project follows Semantic Versioning-style releases while the command and JSO
 
 ## [Unreleased]
 
+### Security
+
+- Require `urllib3>=2.8.0` and `idna>=3.15`, including in installed package
+  metadata, and update the lockfile to address GHSA-gh4c-6fx4-qh6g,
+  GHSA-vxq7-64xx-v4gw, GHSA-8988-9cw3-xx77 and GHSA-65pc-fj4g-8rjx.
+
 ### Changed
 
 - Align release documentation and roadmap with the completed `v0.2.0`
