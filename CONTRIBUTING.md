@@ -19,6 +19,18 @@ The default tests run offline. Real-device smoke tests are opt-in; see README
 for setup. New behavior should have focused tests for protocol contracts and
 failure cases. Keep changes scoped and use Conventional Commits.
 
+## Pull requests
+
+Open a pull request against `main`; direct pushes are blocked, including for
+administrators. Keep your branch up to date with `main`, preferably by rebasing,
+and resolve review conversations before merging. All ten CI checks must pass
+against an up-to-date branch. Only squash merges are enabled; use a descriptive
+Conventional Commit pull request title for the resulting commit.
+
+An approval from another person is not mandatory while the project has a single
+maintainer. Merged branches are deleted automatically. Force pushes and deletion
+of `main` are blocked.
+
 ## New endpoints and writes
 
 Implement reads before writes. Keep endpoint methods in the appropriate API

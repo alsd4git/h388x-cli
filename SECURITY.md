@@ -8,12 +8,14 @@ AGZHM_1.4.4; firmware differences may affect behavior.
 
 ## Reporting a vulnerability
 
-Use GitHub private vulnerability reporting when enabled:
+Report vulnerabilities privately through GitHub:
 
 https://github.com/alsd4git/h388x-cli/security/advisories/new
 
-If private reporting is unavailable, contact the maintainer through an existing
-private channel before sending details. Do not open a public issue containing
+If this form is temporarily unavailable, email the maintainer at
+alessandro.digilio@hotmail.it with a brief description and no secrets or live
+exploit details; arrange a secure channel before sharing sensitive material.
+Do not open a public issue containing
 credentials, exploits against a live modem or unredacted captures.
 
 Include the affected version, firmware, a minimal reproduction, expected

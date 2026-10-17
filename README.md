@@ -147,7 +147,7 @@ as sensitive and add an explicit local ignore rule before working with Git. A
 
 ### Tagged release with uv (recommended)
 
-Once the repository is public, install the released tag over HTTPS without a
+Install the released tag over HTTPS without a
 GitHub account or SSH key:
 
 ```bash
@@ -155,8 +155,7 @@ uv tool install "git+https://github.com/alsd4git/h388x-cli.git@v0.2.0"
 uvx --from "git+https://github.com/alsd4git/h388x-cli.git@v0.2.0" h388x --help
 ```
 
-The repository is currently private, so the shortest no-clone installation path
-uses Git over SSH. Configure GitHub SSH access first, then pin the tool to an
+If you prefer SSH and have configured GitHub SSH access, pin the tool to an
 actual released tag:
 
 ```bash
@@ -171,17 +170,15 @@ uvx --from "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.2.0" h388x --help
 
 `uvx` is an alias for `uv tool run`; both commands create an isolated tool
 environment. The SSH URL deliberately uses the GitHub `git` user, as required
-for private Git repository authentication.
+for SSH authentication.
 
 ### Published GitHub Release asset
 
-After publication, the wheel can also be installed directly:
+The wheel can also be installed directly:
 
 ```bash
 uv tool install "https://github.com/alsd4git/h388x-cli/releases/download/v0.2.0/h388x_cli-0.2.0-py3-none-any.whl"
 ```
-
-These unauthenticated HTTPS examples require public repository visibility.
 
 The `v0.2.0` Release publishes both a wheel and source distribution. For a
 private repository, the verified asset-install flow uses an authenticated

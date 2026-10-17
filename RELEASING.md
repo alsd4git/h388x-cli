@@ -55,18 +55,15 @@ clone whose `origin` is GitHub, use `origin` in the commands above.
 Confirm the GitHub Actions checks for the release commit passed before pushing
 the tag.
 
-## Public repository setup
+## Repository safeguards
 
-Before changing repository visibility, merge the publication fixes and verify
-the release artifacts. After publication:
+The public repository requires pull requests, an up-to-date branch, resolved
+review conversations and all ten CI checks before squash merging to `main`.
+The protection applies to administrators and blocks force pushes and branch
+deletion. Private vulnerability reporting is the primary security contact.
 
-- Enable private vulnerability reporting under GitHub security settings.
-- Protect `main` with a ruleset requiring pull requests and the quality, test,
-  coverage and package checks. Prevent force pushes and branch deletion.
-- Verify the HTTPS tag and direct-wheel install examples in README from a
-  clean environment without repository credentials.
-- Update README to make HTTPS installation the default and retain SSH as an
-  authenticated alternative.
+For each release, verify the HTTPS tag and direct-wheel installation examples
+in README from a clean environment without repository credentials.
 
 Keep PyPI publishing separate until its release workflow is configured.
 
@@ -80,6 +77,10 @@ The tag-triggered `Release` workflow deliberately fails before publishing if:
 - the installed wheel metadata version does not match the tag.
 
 Only after those checks does it create the GitHub Release and attach `dist/*`.
+If that release already exists, it leaves its notes and assets unchanged after
+running the quality gates. Authentication and lookup errors fail the workflow
+rather than being treated as a missing release. Republishing assets requires a
+separate, deliberate maintainer action.
 
 ## Verify the published private Release asset
 
