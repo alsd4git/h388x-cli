@@ -6,7 +6,10 @@ The project follows Semantic Versioning-style releases while the command and JSO
 
 ## [Unreleased]
 
-No unreleased changes yet.
+### Changed
+
+- Align release documentation and roadmap with the completed `v0.2.0`
+  verification, including CI links and published-artifact installation results.
 
 ## [0.2.0] - 2026-10-13
 

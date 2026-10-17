@@ -1,7 +1,9 @@
 # Release validation for v0.2.0
 
-Validated on 2026-10-13. Functional changes were reviewed at `eb47a8e` before
-the release version and documentation update.
+Released and validated on 2026-10-13. Tag `v0.2.0` points to `0a21d04` on
+`main`. Functional changes were reviewed at `eb47a8e` before the release
+version and documentation update. Release and CI status reconfirmed on
+2026-10-17.
 
 ## Source and history
 
@@ -42,13 +44,23 @@ an independent legal review of every historical line.
   coverage, quality and package-install smoke on Linux, Windows and macOS.
   Run: https://github.com/alsd4git/h388x-cli/actions/runs/38379669828
 
-The versioned release commit must pass CI again before the tag is pushed.
-The release workflow then checks tag/version equality and ancestry on `main`,
-runs quality checks and installs the built wheel before attaching artifacts.
-The actual uploaded wheel must be downloaded and smoke-tested after release.
+## Completed release verification
+
+- [CI on release commit `0a21d04`](https://github.com/alsd4git/h388x-cli/actions/runs/38395170467)
+  passed all ten jobs before the tag was pushed.
+- [Release workflow](https://github.com/alsd4git/h388x-cli/actions/runs/38395303609)
+  passed tag/version equality, ancestry on `main`, quality checks, package build
+  and clean Python 3.14 wheel installation.
+- [GitHub Release v0.2.0](https://github.com/alsd4git/h388x-cli/releases/tag/v0.2.0)
+  contains `h388x_cli-0.2.0-py3-none-any.whl` and
+  `h388x_cli-0.2.0.tar.gz`.
+- Both uploaded artifacts were downloaded using authenticated GitHub CLI
+  access and passed `twine check`. The downloaded wheel installed in a clean
+  Python 3.14 environment, reported package version `0.2.0` and ran
+  `h388x --help` successfully.
 
 ## Visibility
 
-The repository remains private. Public HTTPS installation, branch rulesets
+The repository remains private as of 2026-10-17. Public HTTPS installation, branch rulesets
 and private vulnerability reporting must be verified separately if visibility
 changes later. PyPI publishing is not enabled.

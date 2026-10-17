@@ -105,8 +105,9 @@ h388x --help
 On Windows, if the install succeeds but the executable is not found, run
 `uv tool update-shell` once and reopen the terminal.
 
-The `v0.1.0` Release completed this full workflow successfully, including a
-download and installation of the actual private Release wheel.
+The `v0.2.0` release completed this workflow, including download and
+installation of the actual private release wheel. Results and CI links are
+recorded in [the release validation record](docs/release-validation.md).
 
 ## Installing a private tagged release with uv
 

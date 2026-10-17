@@ -24,9 +24,11 @@ history.
 - The offline test suite is fixture/mocking based. CI covers Python 3.10-3.14,
   Ruff lint/format, coverage, package build, and clean wheel-install smoke
   checks.
-- `v0.1.0` is published as a GitHub Release. The tag, release workflow, wheel,
+- `v0.2.0` is published as a GitHub Release. The tag, release workflow, wheel,
   source distribution, and installation from the actual private Release wheel
-  have all been validated end-to-end.
+  have all been validated end-to-end. See
+  [the release validation record](docs/release-validation.md) for CI links
+  and local verification evidence.
 
 ## Near-term work
 
