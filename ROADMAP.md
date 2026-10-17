@@ -26,9 +26,7 @@ history.
   checks.
 - `v0.2.0` is published as a GitHub Release. The tag, release workflow, wheel,
   source distribution, and installation from the actual private Release wheel
-  have all been validated end-to-end. See
-  [the release validation record](docs/release-validation.md) for CI links
-  and local verification evidence.
+  have all been validated end-to-end.
 
 ## Near-term work
 

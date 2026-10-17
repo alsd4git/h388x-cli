@@ -55,9 +55,6 @@ clone whose `origin` is GitHub, use `origin` in the commands above.
 Confirm the GitHub Actions checks for the release commit passed before pushing
 the tag.
 
-The pre-release audit and verification record for `v0.2.0` is in
-[`docs/release-validation.md`](docs/release-validation.md).
-
 ## Public repository setup
 
 Before changing repository visibility, merge the publication fixes and verify
@@ -104,10 +101,6 @@ h388x --help
 
 On Windows, if the install succeeds but the executable is not found, run
 `uv tool update-shell` once and reopen the terminal.
-
-The `v0.2.0` release completed this workflow, including download and
-installation of the actual private release wheel. Results and CI links are
-recorded in [the release validation record](docs/release-validation.md).
 
 ## Installing a private tagged release with uv
 
