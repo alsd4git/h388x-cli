@@ -6,6 +6,46 @@ firmware family **AGZHM_*** (tested on `AGZHM_1.4.4`).
 The goal is to expose every read-only and operational endpoint of the
 WebUI directly from the terminal, with table or JSON output.
 
+## Quick start
+
+You need Python 3.10 or later, [uv](https://docs.astral.sh/uv/getting-started/installation/),
+access to your modem's local network and its WebUI administrator credentials.
+Firmware differences matter; see the [AGZHM firmware notes](#notes-on-agzhm-firmware-quirks).
+
+```bash
+uv tool install "git+https://github.com/alsd4git/h388x-cli.git@v0.2.1"
+h388x --help
+```
+
+Set `H388X_PASSWORD` in your process environment or a private configuration file
+using the [configuration guide](#configuration). `H388X_HOST` defaults to
+`192.168.1.1`; set it if your modem uses another address. Avoid putting the
+password in command-line arguments or shell history.
+
+Read device information without changing modem settings:
+
+```bash
+h388x --json info
+```
+
+The raw output includes your serial number. Keep it private. For a shareable
+subset, the example below uses [jq](https://jqlang.org/) to replace the serial
+and omit all other fields. Captured from a real H388X on 2026-10-27; only the
+serial was replaced, and no network settings were changed:
+
+```console
+$ h388x --json info | jq '{model, serial_number: "REDACTED", software_version}'
+{
+  "model": "H388X",
+  "serial_number": "REDACTED",
+  "software_version": "AGZHM_1.4.4"
+}
+```
+
+Continue with the [command reference](#commands) or the
+[WebUI coverage inventory](docs/webui-coverage.md). This static walkthrough
+requires no animation or video player.
+
 ## Commands
 
 The global `--json` flag (placed *before* the subcommand) outputs JSON
