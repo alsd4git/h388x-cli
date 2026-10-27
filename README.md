@@ -191,21 +191,21 @@ Install the released tag over HTTPS without a
 GitHub account or SSH key:
 
 ```bash
-uv tool install "git+https://github.com/alsd4git/h388x-cli.git@v0.2.0"
-uvx --from "git+https://github.com/alsd4git/h388x-cli.git@v0.2.0" h388x --help
+uv tool install "git+https://github.com/alsd4git/h388x-cli.git@v0.2.1"
+uvx --from "git+https://github.com/alsd4git/h388x-cli.git@v0.2.1" h388x --help
 ```
 
 If you prefer SSH and have configured GitHub SSH access, pin the tool to an
 actual released tag:
 
 ```bash
-uv tool install "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.2.0"
+uv tool install "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.2.1"
 ```
 
 For a one-off invocation without keeping a persistent tool environment:
 
 ```bash
-uvx --from "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.2.0" h388x --help
+uvx --from "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.2.1" h388x --help
 ```
 
 `uvx` is an alias for `uv tool run`; both commands create an isolated tool
@@ -217,24 +217,24 @@ for SSH authentication.
 The wheel can also be installed directly:
 
 ```bash
-uv tool install "https://github.com/alsd4git/h388x-cli/releases/download/v0.2.0/h388x_cli-0.2.0-py3-none-any.whl"
+uv tool install "https://github.com/alsd4git/h388x-cli/releases/download/v0.2.1/h388x_cli-0.2.1-py3-none-any.whl"
 ```
 
-The `v0.2.0` Release publishes both a wheel and source distribution. For a
+The `v0.2.1` Release publishes both a wheel and source distribution. For a
 private repository, the verified asset-install flow uses an authenticated
 GitHub CLI session to download the wheel, then installs that local artifact with
 `uv`:
 
 ```bash
-gh release download v0.2.0 -R alsd4git/h388x-cli -p "h388x_cli-0.2.0-py3-none-any.whl"
-uv tool install ./h388x_cli-0.2.0-py3-none-any.whl
+gh release download v0.2.1 -R alsd4git/h388x-cli -p "h388x_cli-0.2.1-py3-none-any.whl"
+uv tool install ./h388x_cli-0.2.1-py3-none-any.whl
 h388x --help
 ```
 
 For a one-off check directly from the downloaded wheel:
 
 ```bash
-uvx --from ./h388x_cli-0.2.0-py3-none-any.whl h388x --help
+uvx --from ./h388x_cli-0.2.1-py3-none-any.whl h388x --help
 ```
 
 On Windows, if `uv tool install` succeeds but `h388x` is not found, run

@@ -111,13 +111,13 @@ The shortest no-clone path remains Git over SSH. The machine must already have
 GitHub SSH access to this repository:
 
 ```bash
-uv tool install "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.2.0"
+uv tool install "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.2.1"
 ```
 
 For a one-off invocation without a persistent tool install:
 
 ```bash
-uvx --from "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.2.0" h388x --help
+uvx --from "git+ssh://git@github.com/alsd4git/h388x-cli.git@v0.2.1" h388x --help
 ```
 
 Use an existing released tag; do not use an unpinned branch as the recommended install path.

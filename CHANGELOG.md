@@ -6,16 +6,29 @@ The project follows Semantic Versioning-style releases while the command and JSO
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-27
+
 ### Security
 
 - Require `urllib3>=2.8.0` and `idna>=3.15`, including in installed package
   metadata, and update the lockfile to address GHSA-gh4c-6fx4-qh6g,
   GHSA-vxq7-64xx-v4gw, GHSA-8988-9cw3-xx77 and GHSA-65pc-fj4g-8rjx.
+- Require `certifi>=2026.10.19` and refresh the locked certificate bundle to
+  remove trust in the compromised emSign G3 certificate chain
+  (GHSA-6q48-6c7w-9gw2 / PYSEC-2026-4320).
 
 ### Changed
 
-- Align release documentation and roadmap with the completed `v0.2.0`
-  verification, including CI links and published-artifact installation results.
+- Preserve existing release notes and assets when the release workflow is
+  rerun; fail closed on authentication or lookup errors.
+- Update installation examples for the public repository and document the
+  administrator direct-push exception, while keeping `main` history protected.
+- Remove the internal pre-publication validation record from the current tree.
+
+### Added
+
+- A tag-pinned quick start and a real, read-only device-info walkthrough with
+  the serial redacted. A regression test verifies the documented output filter.
 
 ## [0.2.0] - 2026-10-13
 
