@@ -34,6 +34,7 @@ dependencies = [
     # Security floors for requests' transitive HTTP dependencies.
     "urllib3>=2.8.0",
     "idna>=3.15",
+    "certifi>=2026.10.19",
 ]
 
 [project.urls]
