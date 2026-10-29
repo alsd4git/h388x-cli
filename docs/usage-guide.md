@@ -51,7 +51,7 @@ $ h388x --json info | jq '{model, serial_number: "REDACTED", software_version}'
 }
 ```
 
-Continue with the [command reference](#commands) or the
+Continue with the [command reference](#command-reference) or the
 [WebUI coverage inventory](webui-coverage.md). This static walkthrough
 requires no animation or video player.
 
