@@ -1,10 +1,15 @@
 # H388X-CLI
 
+[![CI](https://github.com/alsd4git/h388x-cli/actions/workflows/tests.yml/badge.svg?branch=main)](https://github.com/alsd4git/h388x-cli/actions/workflows/tests.yml)
+[![Latest release](https://img.shields.io/github/v/release/alsd4git/h388x-cli)](https://github.com/alsd4git/h388x-cli/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A command-line interface to manage your ZTE **H388X** modem (TIM HUB+),
 firmware family **AGZHM_*** (tested on `AGZHM_1.4.4`).
 
-The goal is to expose every read-only and operational endpoint of the
-WebUI directly from the terminal, with table or JSON output.
+Inspect modem status and manage supported settings from the terminal.
+Commands return readable tables or JSON for scripts. Firmware support is
+specific to the AGZHM family. The CLI does not support every H388X firmware.
 
 ## Quick start
 
@@ -46,7 +51,7 @@ Continue with the [command reference](#commands) or the
 [WebUI coverage inventory](docs/webui-coverage.md). This static walkthrough
 requires no animation or video player.
 
-## Commands
+## Command reference
 
 The global `--json` flag (placed *before* the subcommand) outputs JSON
 instead of pretty tables, suitable for piping into `jq` or scripts.
